@@ -12,7 +12,7 @@ npm run db:generate
 npm run dev
 ```
 
-Open http://localhost:3000. The board works without credentials or a database. It is explicitly a **demo court**: sample questions and wagers live in browser session storage, with no funds or wallet signatures involved. Reloading restores the demo; “Reset demo” restores the initial fixtures. Demo admin controls have no server authority.
+Open http://localhost:3000. The board shows only published on-chain questions and wagers. Without configuration it displays setup guidance and an empty board. There are no sample games, local wager simulations, or browser-storage account data.
 
 For the backend, set `DATABASE_URL` to a PostgreSQL database, then run `npm run db:migrate`. The checked-in initial migration creates challenges, sessions, question drafts, and transaction references.
 
@@ -21,8 +21,8 @@ For the backend, set `DATABASE_URL` to a PostgreSQL database, then run `npm run 
 1. Obtain Helius WaaS access on a paid Helius project. Enable email one-time codes in its WaaS configuration and register your app domain.
 2. Set **server-only** `HELIUS_API_KEY`. Never prefix it with `NEXT_PUBLIC_`. The SDK uses `/api/helius/[...path]` for bootstrap and RPC.
 3. Set `APP_ORIGIN` to the exact browser origin, e.g. `http://localhost:3000` or your deployed HTTPS origin.
-4. Sign in through Helius using **alexnham11@gmail.com**. Copy the resulting embedded wallet's address from the wallet panel into **server-only** `ADMIN_WALLET_ADDRESS`, then restart.
-5. Use “Verify wallet for backend access.” Signing the single-use message establishes a one-day backend session. The pinned wallet sees “Create question” and can save database drafts. Arbitrary email fields, client roles, and demo admin controls cannot grant backend access.
+4. The configured admin wallet is **`ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`**, pinned in server-only `ADMIN_WALLET_ADDRESS`. Sign in to that wallet through Helius, then restart the server after any configuration change.
+5. Use “Verify wallet for backend access.” Signing the single-use message establishes a one-day backend session. After matching initialization, the pinned wallet sees “Create question” and can publish on-chain questions. Arbitrary email fields and client roles cannot grant backend access.
 
 Admin ownership is established by the operator pinning the wallet from the correct email account. The app does not trust the SDK's client-side email as a server-verified claim. Switching that pinned address deliberately transfers admin authority. Do not use the deterministic test wallet in real configuration.
 
@@ -32,17 +32,23 @@ Challenges expire after five minutes and are atomically deleted on verification,
 
 Set the public, **devnet** `NEXT_PUBLIC_USDC_MINT` to your intended six-decimal original SPL quote mint and `NEXT_PUBLIC_VAULT_PROGRAM_ID` to your initialized vault deployment. These are addresses, not secrets. The app derives the vault, reserve, and vault-token mint; it checks account ownership, decimals, reserve mint/authority, and vault-token mint authority.
 
-The wallet panel reads SOL, USDC, and vault-token associated-account balances. Buy/redeem creates missing associated accounts idempotently, simulates the existing program's `buy`/`sell` transaction, and displays rate, network fee, rent, and fee payer before explicit signing. Submitted signatures are saved locally for recovery; uncertain confirmations instruct the user to inspect the signature before retrying. No trades or deployments were performed during implementation. Balances refresh when the wallet panel is reopened after a confirmed trade.
+The wallet panel reads SOL, USDC, and vault-token associated-account balances. Buy/redeem creates missing associated accounts idempotently, simulates the existing program's `buy`/`sell` transaction, and displays rate, network fee, rent, and fee payer before explicit signing. Submitted signatures are saved locally for recovery; uncertain confirmations instruct the user to inspect the signature before retrying. No trades or deployments were performed during implementation. Balances refresh after a confirmed trade and through the wallet panel’s refresh button.
 
 The configured quote mint must be pinned intentionally: the vault permits any six-decimal original SPL mint, and a ticker cannot establish that it is Circle USDC.
 
-## Matching escrow integration status
+## Matched-wager escrow
 
-**Real wager funding and publishing are disabled.** `/api/escrow` fails closed with HTTP 503. A valid transaction signature supplied by a browser does not enable funding. No chain verification or matching settlement is fabricated.
+The matching program and frontend adapter are implemented. With Helius configured, the board reads confirmed on-chain questions, wagers, and escrow balances via `/api/market`; it never loads local sample data. Without Helius credentials it shows configuration guidance.
 
-The current Anchor program pools stakes, permits top-ups, and pays proportionally. It cannot implement exact peer matching, cancellation, or explicit voiding. The other builder must provide the matching contract described in [ESCROW_HANDOFF.md](docs/ESCROW_HANDOFF.md). `lib/escrow.ts` defines the frontend boundary; `MATCHING_ESCROW_CONNECTED` is false. Adding environment variables alone never enables matching.
+**The deployed program must be upgraded before new matching instructions can run.** Follow [MATCHING_DEPLOYMENT.md](docs/MATCHING_DEPLOYMENT.md). The app detects readiness by reading and validating the canonical `matching_v1` market account, not by an environment toggle. An uninitialized or old deployment shows a setup notice and no funded proposals. After upgrading, the configured Helius admin signs “Review initialization” once, then publishes questions and resolves results through the UI.
 
-The demo supports equal full stakes, opposite sides, no self-matching, cancellation, winning claims, void refunds, deadline refunds, and resolution after close. Demo transitions are UI simulations, **not proof of on-chain concurrency guarantees**. The board remains a demo even when Helius is configured; wallet operations are separately labeled devnet transactions. Database question drafts are stored separately from demo fixtures.
+The admin wallet pinned on-chain is `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`; it must also match `ADMIN_WALLET_ADDRESS` on the server. Changing this admin requires a deliberate program upgrade. Question text, outcomes, and deadlines are immutable on-chain. The older pooled-betting instructions and account layouts remain compatible.
+
+Users propose a side with a positive six-decimal stake; creation immediately deposits that amount. Another wallet matches the entire amount on the opposite side. Matching is atomic and has one taker. Only the proposer can cancel an unmatched wager. After close, the admin declares the winner or voids the question before the resolution deadline. The winner claims exactly both stakes. Voided or expired unresolved questions return each user's own stake independently; unmatched deposits are refundable after cutoff. No platform fee or partial matches.
+
+Every action is simulated before the transaction review. Users explicitly approve a Helius signature before broadcast. Signed message bytes are checked against the reviewed transaction; the transaction signature is saved before submission, so uncertain sends can be recovered rather than repeated. The wallet panel's “Check pending betting transaction” reconciles confirmations, failures, and finalized blockhash expiry. Balances refresh after confirmation; the board polls confirmed chain state every 15 seconds and on focus.
+
+Backend sessions are required before preparing wallet actions; the first action may request a sign-in message. `/api/escrow` only records confirmed matching transactions after checking the signed fee payer, canonical program/instruction, target question, and chain account state. Transaction references are supplemental: even if database recording fails after confirmation, the on-chain wager is authoritative and the UI reloads chain state. No server signs transactions or holds wallet keys.
 
 ## Checks
 
@@ -54,7 +60,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Playwright covers desktop/mobile flows, proposal validation, matching, persisted demo state, cancellation, claims, rejection, admin deadline controls, dialogs, overflow, and automated axe accessibility checks. API checks verify fail-closed funding, forged admin denial, and cross-origin denial without a database.
+Playwright covers live-board rendering with isolated server-response mocks, empty states, unavailable RPC/deployment states, signed-out funding restrictions, closed-question restrictions, search, details, dialogs, overflow, and automated axe accessibility checks. Local Solana VM and transaction-builder tests cover monetary transitions. API checks verify forged admin denial and cross-origin denial.
 
 For database-backed API tests, use a **dedicated disposable database**, migrate it, and run:
 
@@ -66,7 +72,7 @@ BROBETS_TEST_DATABASE=1 npm run test:e2e
 
 The deterministic test wallet is public test data, not a funded wallet. These tests cover concurrent replay attempts, expiration, signed sessions, admin draft authorization, deadline validation, and logout. They create and remove test question content and leave expired auth rows in the disposable database. Do not run against a production database.
 
-Live Helius email delivery, funded devnet vault trades, and matched escrow concurrency require external credentials/deployments and remain integration checks. Automated accessibility checks supplement manual screen-reader and real-device review.
+Live Helius email delivery, funded devnet vault trades, and a full two-wallet devnet escrow run require the upgraded deployment and user wallet signatures. Local LiteSVM tests cover matching conflicts, both winning sides, cancellation, refunds, and invalid accounts. Automated accessibility checks supplement manual screen-reader and real-device review.
 
 ## Dependency notes
 

@@ -1,3 +1,5 @@
+> Implementation update: the matched-wager contract is now in `programs/token-vault/src/matching.rs`, with its generated frontend ABI in `web/lib/matching-idl.json`. This original handoff is retained as the acceptance specification. See [MATCHING_DEPLOYMENT.md](MATCHING_DEPLOYMENT.md) for rollout. Question content is stored directly and immutably on-chain rather than through an off-chain content hash.
+
 # Matching escrow handoff
 
 The frontend needs individual, fully funded, equal-stake wagers under admin-created basketball questions. The current pooled `Bet` / `Position` program must not be used to approximate this behavior.
@@ -24,7 +26,7 @@ Use integer base units end to end; checked arithmetic must guarantee `2 * stake 
 
 ## Frontend/backend wiring after delivery
 
-Implement `MatchingEscrow` from `lib/escrow.ts` with the delivered generated client; do not add a permissive environment toggle. Add authenticated action endpoints and read endpoints. Create immutable database metadata drafts before preparing a canonical admin transaction; publish only after matching chain account confirmation and metadata-hash verification. Store transaction references only after validating their expected action and wallet. Keep sessionStorage fixtures confined to an explicit demo view.
+Implement `MatchingEscrow` from `lib/escrow.ts` with the delivered generated client; do not add a permissive environment toggle. Add authenticated action endpoints and read endpoints. Create immutable database metadata drafts before preparing a canonical admin transaction; publish only after matching chain account confirmation and metadata-hash verification. Store transaction references only after validating their expected action and wallet. Never populate the live board from browser storage.
 
 For each action: read canonical state, construct the expected transaction, simulate, show stake/payout/network/fee payer/fees, request explicit user signature, submit, and persist a pending reference. On confirmation, verify finalized instruction/account effects and re-read escrow state from the expected program. Confirmed chain state determines UI status; transaction signatures and browser state are never payment proof. Retry confirmation/reconcile on reload and after RPC errors; do not automatically repeat a transfer when the original result is unknown.
 

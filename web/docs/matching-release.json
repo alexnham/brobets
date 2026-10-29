@@ -1,0 +1,12 @@
+{
+  "cluster": "devnet",
+  "programId": "AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs",
+  "programData": "JCnkbUMKsQVgoAhiuJ9n9o1kNKUnagNF7rK6FF5EMCQC",
+  "upgradeAuthority": "GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG",
+  "matchingAdmin": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
+  "programBytes": 522088,
+  "sha256": "07bb4f7bab506f4f28fb58c55dce7639e745ea44711b5e4b799bec3395c31df9",
+  "deploymentStatus": "not deployed by this implementation",
+  "expectedTemporaryBufferRentSOL": "2.65304524",
+  "expectedAdditionalProgramRentSOL": "0.74399648"
+}

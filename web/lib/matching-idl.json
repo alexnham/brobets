@@ -1,0 +1,1072 @@
+{
+  "address": "AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs",
+  "metadata": {
+    "name": "token_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "cancel_wager",
+      "discriminator": [
+        57,
+        92,
+        124,
+        123,
+        216,
+        16,
+        37,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "question",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          },
+          "relations": [
+            "wager"
+          ]
+        },
+        {
+          "name": "token_mint",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "wager",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question"
+              },
+              {
+                "kind": "account",
+                "path": "wager.maker",
+                "account": "MatchedWager"
+              },
+              {
+                "kind": "account",
+                "path": "wager.proposal_id",
+                "account": "MatchedWager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_wager",
+      "discriminator": [
+        217,
+        97,
+        97,
+        181,
+        149,
+        110,
+        241,
+        216
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "question",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          },
+          "relations": [
+            "wager"
+          ]
+        },
+        {
+          "name": "token_mint",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "wager",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question"
+              },
+              {
+                "kind": "account",
+                "path": "wager.maker",
+                "account": "MatchedWager"
+              },
+              {
+                "kind": "account",
+                "path": "wager.proposal_id",
+                "account": "MatchedWager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_question",
+      "discriminator": [
+        222,
+        74,
+        49,
+        30,
+        160,
+        220,
+        179,
+        27
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "address": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104,
+                  105,
+                  110,
+                  103,
+                  95,
+                  118,
+                  49
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "question",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "question_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "question_id",
+          "type": "u64"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "side_a",
+          "type": "string"
+        },
+        {
+          "name": "side_b",
+          "type": "string"
+        },
+        {
+          "name": "closes_at",
+          "type": "i64"
+        },
+        {
+          "name": "resolve_by",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "expire_question",
+      "discriminator": [
+        187,
+        12,
+        77,
+        174,
+        232,
+        237,
+        189,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "question",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_matching",
+      "discriminator": [
+        222,
+        68,
+        208,
+        210,
+        137,
+        144,
+        117,
+        110
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "address": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8"
+        },
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.usdc_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  116,
+                  99,
+                  104,
+                  105,
+                  110,
+                  103,
+                  95,
+                  118,
+                  49
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "match_wager",
+      "discriminator": [
+        63,
+        153,
+        68,
+        251,
+        230,
+        181,
+        153,
+        247
+      ],
+      "accounts": [
+        {
+          "name": "taker",
+          "signer": true
+        },
+        {
+          "name": "question",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          },
+          "relations": [
+            "wager"
+          ]
+        },
+        {
+          "name": "token_mint",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "wager",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question"
+              },
+              {
+                "kind": "account",
+                "path": "wager.maker",
+                "account": "MatchedWager"
+              },
+              {
+                "kind": "account",
+                "path": "wager.proposal_id",
+                "account": "MatchedWager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "taker_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "propose_wager",
+      "discriminator": [
+        83,
+        236,
+        237,
+        63,
+        94,
+        112,
+        79,
+        23
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "question",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "wager",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question"
+              },
+              {
+                "kind": "account",
+                "path": "maker"
+              },
+              {
+                "kind": "arg",
+                "path": "proposal_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  103,
+                  101,
+                  114,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wager"
+              }
+            ]
+          }
+        },
+        {
+          "name": "maker_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "proposal_id",
+          "type": "u64"
+        },
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "resolve_question",
+      "discriminator": [
+        52,
+        32,
+        224,
+        179,
+        180,
+        8,
+        0,
+        246
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "address": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "question",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "outcome",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "MatchMarket",
+      "discriminator": [
+        6,
+        180,
+        194,
+        219,
+        78,
+        13,
+        29,
+        65
+      ]
+    },
+    {
+      "name": "MatchQuestion",
+      "discriminator": [
+        119,
+        174,
+        38,
+        142,
+        203,
+        199,
+        148,
+        133
+      ]
+    },
+    {
+      "name": "MatchedWager",
+      "discriminator": [
+        10,
+        113,
+        100,
+        37,
+        140,
+        210,
+        219,
+        29
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "InsufficientReserve",
+      "msg": "The vault does not have enough USDC for this redemption"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidSide",
+      "msg": "Side must be 1 or 2"
+    },
+    {
+      "code": 6003,
+      "name": "Closed",
+      "msg": "Betting is closed"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidDeadline",
+      "msg": "Deadlines must be in the future and resolution must follow closing"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidResolutionTime",
+      "msg": "Oracle must resolve after closing and before the resolution deadline"
+    },
+    {
+      "code": 6006,
+      "name": "AlreadyResolved",
+      "msg": "Bet already resolved"
+    },
+    {
+      "code": 6007,
+      "name": "Unresolved",
+      "msg": "Bet has not resolved"
+    },
+    {
+      "code": 6008,
+      "name": "AlreadyClaimed",
+      "msg": "Position already claimed"
+    },
+    {
+      "code": 6009,
+      "name": "Overflow",
+      "msg": "Amount overflow"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidQuestion",
+      "msg": "Question text or outcomes are invalid"
+    },
+    {
+      "code": 6011,
+      "name": "Unavailable",
+      "msg": "This wager is no longer available for this action"
+    },
+    {
+      "code": 6012,
+      "name": "Unauthorized",
+      "msg": "This wallet is not entitled to this action or payout"
+    }
+  ],
+  "types": [
+    {
+      "name": "MatchMarket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchQuestion",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "question_id",
+            "type": "u64"
+          },
+          {
+            "name": "closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "resolve_by",
+            "type": "i64"
+          },
+          {
+            "name": "outcome",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "side_a",
+            "type": "string"
+          },
+          {
+            "name": "side_b",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MatchedWager",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "question",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "taker",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposal_id",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "state",
+            "docs": [
+              "0 open, 1 matched, 2 cancelled, 3 paid/refunded."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "maker_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "taker_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

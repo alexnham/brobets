@@ -452,4 +452,83 @@ fn trades_and_invalid_accounts_are_atomic() {
         );
         assert_eq!(balance(&svm, address(reserve)), 10_000_000);
     }
+    // Use the actual devnet Metaplex binary, with test-only signature checking disabled
+    // to model the pinned authority without loading a real wallet's private key.
+    svm.add_program_from_file(
+        address(anchor_spl::metadata::ID),
+        "../../target/deploy/mpl_token_metadata.so",
+    )
+    .unwrap();
+    let (metadata, _) = anchor_lang::prelude::Pubkey::find_program_address(
+        &[
+            b"metadata",
+            anchor_spl::metadata::ID.as_ref(),
+            mint.as_ref(),
+        ],
+        &anchor_spl::metadata::ID,
+    );
+    let metadata_accounts = |authority| accounts::CreateTokenMetadata {
+        authority,
+        vault,
+        token_mint: mint,
+        metadata,
+        metadata_program: anchor_spl::metadata::ID,
+        system_program: anchor_lang::system_program::ID,
+        rent: anchor_lang::pubkey!("SysvarRent111111111111111111111111111111111"),
+    };
+    assert!(!send(
+        &mut svm,
+        &user,
+        ix(
+            metadata_accounts(pubkey(user.pubkey())),
+            instruction::CreateTokenMetadata {}
+        )
+    ));
+    assert!(svm.get_account(&address(metadata)).is_none());
+    let authority = token_vault::METADATA_AUTHORITY;
+    svm.airdrop(&address(authority), 1_000_000_000).unwrap();
+    svm = svm.with_sigverify(false);
+    let metadata_blockhash = svm.latest_blockhash();
+    let unsigned = |instruction| {
+        let mut transaction =
+            Transaction::new_with_payer(&[instruction], Some(&address(authority)));
+        transaction.message.recent_blockhash = metadata_blockhash;
+        transaction
+    };
+    let mut wrong = metadata_accounts(authority);
+    wrong.metadata = pubkey(Address::new_unique());
+    assert!(svm
+        .send_transaction(unsigned(ix(wrong, instruction::CreateTokenMetadata {})))
+        .is_err());
+    let result = svm.send_transaction(unsigned(ix(
+        metadata_accounts(authority),
+        instruction::CreateTokenMetadata {},
+    )));
+    assert!(result.is_ok(), "metadata creation: {result:?}");
+    let account = svm.get_account(&address(metadata)).unwrap();
+    assert_eq!(account.owner, address(anchor_spl::metadata::ID));
+    let data = anchor_spl::metadata::mpl_token_metadata::accounts::Metadata::safe_deserialize(
+        &account.data,
+    )
+    .unwrap();
+    assert_eq!(data.update_authority.to_bytes(), authority.to_bytes());
+    assert_eq!(data.mint.to_bytes(), mint.to_bytes());
+    assert_eq!(data.name.trim_end_matches('\0'), token_vault::TOKEN_NAME);
+    assert_eq!(
+        data.symbol.trim_end_matches('\0'),
+        token_vault::TOKEN_SYMBOL
+    );
+    assert_eq!(data.uri.trim_end_matches('\0'), token_vault::TOKEN_URI);
+    assert!(data.is_mutable);
+    assert_eq!(data.seller_fee_basis_points, 0);
+    svm.expire_blockhash();
+    let mut repeat = Transaction::new_with_payer(
+        &[ix(
+            metadata_accounts(authority),
+            instruction::CreateTokenMetadata {},
+        )],
+        Some(&address(authority)),
+    );
+    repeat.message.recent_blockhash = svm.latest_blockhash();
+    assert!(svm.send_transaction(repeat).is_err());
 }

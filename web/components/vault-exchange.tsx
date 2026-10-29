@@ -2,7 +2,11 @@
 import { useState, useEffect } from "react";
 import { useHeliusWallet } from "helius-wallet-kit";
 import { prepareVaultTrade } from "@/lib/wallet";
-export function VaultExchange() {
+export function VaultExchange({
+  onConfirmed,
+}: {
+  onConfirmed: () => Promise<void>;
+}) {
   const wallet = useHeliusWallet();
   const [action, setAction] = useState<"buy" | "sell">("buy"),
     [amount, setAmount] = useState("5"),
@@ -68,6 +72,8 @@ export function VaultExchange() {
     setBusy(true);
     try {
       if (wallet.cluster !== "devnet") throw Error("Devnet required.");
+      if (prepared.transaction.feePayer?.toBase58() !== wallet.address)
+        throw Error("Wallet changed. Simulate again.");
       if (
         (await wallet.connection.getBlockHeight("confirmed")) >
         prepared.lifetime.lastValidBlockHeight
@@ -91,6 +97,7 @@ export function VaultExchange() {
         throw Error(`Transaction failed: ${JSON.stringify(result.value.err)}`);
       localStorage.removeItem(storageKey);
       setStatus(`Confirmed · ${signature}`);
+      await onConfirmed();
     } catch (e) {
       setStatus(
         `Failed or rejected · ${(e as Error).message}. If submitted, check the saved signature before retrying.`,

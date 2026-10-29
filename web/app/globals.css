@@ -259,7 +259,7 @@ main {
   margin: auto;
   padding: 25px 44px 0;
 }
-.demo-banner {
+.market-banner {
   font-size: 11px;
   display: flex;
   justify-content: space-between;
@@ -268,11 +268,11 @@ main {
   border-bottom: 1px solid #2d3030;
   padding: 0 0 17px;
 }
-.demo-banner b {
+.market-banner b {
   color: #d9c3a6;
   font-weight: 500;
 }
-.demo-banner button {
+.market-banner button {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -829,7 +829,7 @@ footer {
   font-family: "Barlow Condensed", sans-serif;
   font-size: 24px;
 }
-.demo-tag {
+.status-tag {
   display: inline-block;
   background: #303326;
   padding: 7px 9px;
@@ -1080,15 +1080,15 @@ footer {
   main {
     padding: 18px 20px 0;
   }
-  .demo-banner {
+  .market-banner {
     font-size: 9px;
     line-height: 1.6;
     align-items: center;
   }
-  .demo-banner > span {
+  .market-banner > span {
     max-width: 67%;
   }
-  .demo-banner button {
+  .market-banner button {
     font-size: 9px;
     flex-shrink: 0;
   }
@@ -1208,5 +1208,44 @@ footer {
   }
   button {
     transition: none;
+  }
+}
+
+.header-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  background: none;
+  border: 0;
+  padding: 0;
+  min-width: 65px;
+}
+.header-balance span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.header-balance strong {
+  color: var(--orange);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  max-width: 180px;
+}
+@media (max-width: 760px) {
+  .topbar .breadcrumb {
+    display: none;
+  }
+  .top-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .header-balance {
+    margin-right: auto;
+    align-items: flex-start;
+  }
+  .header-balance strong {
+    max-width: 120px;
+    font-size: 14px;
   }
 }

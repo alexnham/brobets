@@ -32,7 +32,11 @@ export async function readBalances(connection: Connection, address: string) {
   return { sol, usdc: await balance(usdc), tokens: await balance(token) };
 }
 
-import { Transaction, TransactionInstruction } from "@solana/web3.js";
+import {
+  Transaction,
+  TransactionInstruction,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -63,7 +67,16 @@ export async function prepareVaultTrade(
     pid,
   );
   const vaultInfo = await connection.getAccountInfo(vault, "confirmed");
-  if (!vaultInfo || !vaultInfo.owner.equals(pid))
+  if (
+    !vaultInfo ||
+    !vaultInfo.owner.equals(pid) ||
+    vaultInfo.data.length !== 73 ||
+    !vaultInfo.data
+      .subarray(0, 8)
+      .equals(Buffer.from([211, 8, 232, 43, 2, 152, 117, 119])) ||
+    !vaultInfo.data.subarray(8, 40).equals(usdc.toBuffer()) ||
+    !vaultInfo.data.subarray(40, 72).equals(token.toBuffer())
+  )
     throw Error(
       "Configured vault is not initialized under the expected program.",
     );
@@ -88,7 +101,7 @@ export async function prepareVaultTrade(
       ? [102, 6, 61, 18, 1, 218, 235, 234]
       : [51, 230, 133, 164, 1, 127, 131, 173],
   );
-  data.writeBigUInt64LE(units, 8);
+  new DataView(data.buffer, data.byteOffset, data.byteLength).setBigUint64(8, units, true);
   const transaction = new Transaction().add(
     createAssociatedTokenAccountIdempotentInstruction(
       user,
@@ -120,7 +133,10 @@ export async function prepareVaultTrade(
   const lifetime = await connection.getLatestBlockhash("confirmed");
   transaction.recentBlockhash = lifetime.blockhash;
   transaction.feePayer = user;
-  const simulation = await connection.simulateTransaction(transaction);
+  const simulation = await connection.simulateTransaction(
+    new VersionedTransaction(transaction.compileMessage()),
+    { commitment: "confirmed", sigVerify: false },
+  );
   if (simulation.value.err)
     throw Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
   const fee = await connection.getFeeForMessage(

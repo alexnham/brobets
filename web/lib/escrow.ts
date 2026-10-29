@@ -2,6 +2,7 @@ export type Side = "a" | "b";
 export type Wager = {
   id: string;
   questionId: string;
+  proposalId?: string;
   maker: string;
   taker?: string;
   side: Side;
@@ -10,6 +11,7 @@ export type Wager = {
   claimedBy?: string[];
 };
 export type Question = {
+  chainId?: string;
   id: string;
   title: string;
   sideA: string;
@@ -20,27 +22,3 @@ export type Question = {
   category: string;
   result?: Side | "void";
 };
-export type EscrowAction =
-  | "createQuestion"
-  | "propose"
-  | "match"
-  | "cancel"
-  | "resolve"
-  | "void"
-  | "refundExpired"
-  | "claim";
-// Matching IDL is not available. Never reinterpret the existing pooled escrow as matched wagers.
-export const MATCHING_ESCROW_CONNECTED = false;
-export interface MatchingEscrow {
-  readQuestion(address: string): Promise<Question>;
-  readWager(address: string): Promise<Wager>;
-  prepare(
-    action: EscrowAction,
-    input: Record<string, string>,
-  ): Promise<{ transaction: Uint8Array; feeLamports: string }>;
-  verifyConfirmed(
-    signature: string,
-    action: EscrowAction,
-    wallet: string,
-  ): Promise<Wager | Question>;
-}

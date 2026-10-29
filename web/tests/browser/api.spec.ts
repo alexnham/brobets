@@ -12,7 +12,7 @@ test("escrow fails closed and forged admin is rejected", async ({
     (
       await request.post("/api/escrow", { data: { signature: "fake" } })
     ).status(),
-  ).toBe(503);
+  ).toBe(403);
   expect(
     (
       await request.post("/api/questions", {
@@ -90,19 +90,26 @@ test("single-use challenge, session binding, expiry and admin draft permissions"
         await request.post("/api/questions", { headers: origin, data: draft })
       ).status(),
     ).toBe(403);
-    await request.post("/api/auth/challenge", {
+    const expiring = await request.post("/api/auth/challenge", {
       headers: origin,
       data: { wallet },
     });
+    const { message: expiredMessage } = await expiring.json();
+    const expiredSignature = Buffer.from(
+      nacl.sign.detached(
+        new TextEncoder().encode(expiredMessage),
+        keys.secretKey,
+      ),
+    ).toString("hex");
     await db.challenge.updateMany({
-      where: { wallet },
+      where: { message: expiredMessage },
       data: { expiresAt: new Date(0) },
     });
     expect(
       (
         await request.post("/api/auth/verify", {
           headers: origin,
-          data: { signature },
+          data: { signature: expiredSignature },
         })
       ).status(),
     ).toBe(401);

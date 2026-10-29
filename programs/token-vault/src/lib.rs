@@ -5,8 +5,14 @@ declare_id!("AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs");
 
 pub mod betting;
 pub use betting::*;
+pub mod matching;
+pub use matching::*;
 
 pub const DECIMALS: u8 = 6;
+pub const METADATA_AUTHORITY: Pubkey = pubkey!("GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG");
+pub const TOKEN_NAME: &str = "BROBETS";
+pub const TOKEN_SYMBOL: &str = "BB";
+pub const TOKEN_URI: &str = "https://alexnham.github.io/storage/brobets.json";
 
 #[program]
 pub mod token_vault {
@@ -17,6 +23,46 @@ pub mod token_vault {
         ctx.accounts.vault.token_mint = ctx.accounts.token_mint.key();
         ctx.accounts.vault.bump = ctx.bumps.vault;
         Ok(())
+    }
+
+    /// One-time metadata creation for the existing mint; the wallet can update it directly afterward.
+    pub fn create_token_metadata(ctx: Context<CreateTokenMetadata>) -> Result<()> {
+        use anchor_spl::metadata::{
+            create_metadata_accounts_v3, mpl_token_metadata::types::DataV2,
+            CreateMetadataAccountsV3,
+        };
+        let seeds: &[&[u8]] = &[
+            b"vault",
+            ctx.accounts.vault.usdc_mint.as_ref(),
+            &[ctx.accounts.vault.bump],
+        ];
+        create_metadata_accounts_v3(
+            CpiContext::new_with_signer(
+                ctx.accounts.metadata_program.key(),
+                CreateMetadataAccountsV3 {
+                    metadata: ctx.accounts.metadata.to_account_info(),
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    mint_authority: ctx.accounts.vault.to_account_info(),
+                    payer: ctx.accounts.authority.to_account_info(),
+                    update_authority: ctx.accounts.authority.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                    rent: ctx.accounts.rent.to_account_info(),
+                },
+                &[seeds],
+            ),
+            DataV2 {
+                name: TOKEN_NAME.into(),
+                symbol: TOKEN_SYMBOL.into(),
+                uri: TOKEN_URI.into(),
+                seller_fee_basis_points: 0,
+                creators: None,
+                collection: None,
+                uses: None,
+            },
+            true,
+            true,
+            None,
+        )
     }
 
     pub fn create_bet(
@@ -41,6 +87,52 @@ pub mod token_vault {
     }
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         betting::handle_claim(ctx)
+    }
+
+    pub fn initialize_matching(ctx: Context<InitializeMatching>) -> Result<()> {
+        matching::init(ctx)
+    }
+    pub fn create_question(
+        ctx: Context<CreateQuestion>,
+        question_id: u64,
+        title: String,
+        side_a: String,
+        side_b: String,
+        closes_at: i64,
+        resolve_by: i64,
+    ) -> Result<()> {
+        matching::create(
+            ctx,
+            question_id,
+            title,
+            side_a,
+            side_b,
+            closes_at,
+            resolve_by,
+        )
+    }
+    pub fn propose_wager(
+        ctx: Context<ProposeWager>,
+        proposal_id: u64,
+        side: u8,
+        amount: u64,
+    ) -> Result<()> {
+        matching::propose(ctx, proposal_id, side, amount)
+    }
+    pub fn match_wager(ctx: Context<MatchWager>) -> Result<()> {
+        matching::take(ctx)
+    }
+    pub fn cancel_wager(ctx: Context<WithdrawWager>) -> Result<()> {
+        matching::withdraw(ctx, true)
+    }
+    pub fn claim_wager(ctx: Context<WithdrawWager>) -> Result<()> {
+        matching::withdraw(ctx, false)
+    }
+    pub fn resolve_question(ctx: Context<ResolveQuestion>, outcome: u8) -> Result<()> {
+        matching::resolve(ctx, outcome)
+    }
+    pub fn expire_question(ctx: Context<ExpireQuestion>) -> Result<()> {
+        matching::expire(ctx)
     }
 
     /// Amount is in millionths: 1_000_000 buys one token for one USDC.
@@ -137,6 +229,24 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CreateTokenMetadata<'info> {
+    #[account(mut, address = METADATA_AUTHORITY)]
+    pub authority: Signer<'info>,
+    #[account(seeds = [b"vault", vault.usdc_mint.as_ref()], bump = vault.bump, has_one = token_mint)]
+    pub vault: Account<'info, Vault>,
+    #[account(seeds = [b"token", vault.key().as_ref()], bump,
+        mint::decimals = DECIMALS, mint::authority = vault)]
+    pub token_mint: Account<'info, Mint>,
+    /// CHECK: Canonical Metaplex PDA; the pinned Metaplex program creates and validates its contents.
+    #[account(mut, seeds = [b"metadata", metadata_program.key().as_ref(), token_mint.key().as_ref()],
+        bump, seeds::program = metadata_program.key())]
+    pub metadata: UncheckedAccount<'info>,
+    pub metadata_program: Program<'info, anchor_spl::metadata::Metadata>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
 pub struct Trade<'info> {
     pub user: Signer<'info>,
     #[account(seeds = [b"vault", usdc_mint.key().as_ref()], bump = vault.bump,
@@ -187,6 +297,12 @@ pub enum VaultError {
     AlreadyClaimed,
     #[msg("Amount overflow")]
     Overflow,
+    #[msg("Question text or outcomes are invalid")]
+    InvalidQuestion,
+    #[msg("This wager is no longer available for this action")]
+    Unavailable,
+    #[msg("This wallet is not entitled to this action or payout")]
+    Unauthorized,
 }
 
 #[cfg(test)]

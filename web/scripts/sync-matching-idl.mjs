@@ -1,0 +1,10 @@
+import { readFileSync, writeFileSync } from "node:fs";
+const source = new URL("../../target/idl/token_vault.json", import.meta.url);
+const idl = JSON.parse(readFileSync(source, "utf8"));
+const instructions = new Set(["initialize_matching", "create_question", "propose_wager", "match_wager", "cancel_wager", "claim_wager", "resolve_question", "expire_question"]);
+const accounts = new Set(["MatchMarket", "MatchQuestion", "MatchedWager"]);
+idl.instructions = idl.instructions.filter(row => instructions.has(row.name));
+idl.accounts = idl.accounts.filter(row => accounts.has(row.name));
+idl.types = idl.types.filter(row => accounts.has(row.name));
+if (idl.instructions.length !== 8 || idl.accounts.length !== 3) throw Error("Build the matching program with anchor build first");
+writeFileSync(new URL("../lib/matching-idl.json", import.meta.url), JSON.stringify(idl, null, 2) + "\n");

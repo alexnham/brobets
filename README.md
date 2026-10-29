@@ -1,5 +1,8 @@
 # Fixed-price token vault (Anchor)
 
+Public account addresses and authority assignments: [ADDRESSES.md](ADDRESSES.md).
+
+
 An Anchor 1.1.2 program that creates a new SPL token redeemable at **1 token = 1 USDC**. Both mints have six decimals. A purchase of `1_000_000` base units deposits one USDC and mints one token; a sale burns one token and releases one USDC. Fractional trades work down to `0.000001` token. The two operations in each instruction succeed or revert together.
 
 ## Instructions
@@ -99,3 +102,62 @@ Tests also exercise escrow deposits, top-ups across both sides, proportional set
 ### Prepare devnet initialization
 
 Run `node scripts/prepare-initialize.cjs` from the repository root (requires the existing `web` dependencies installed with `cd web && npm ci`). This read-only helper uses the configured devnet USDC mint and payer public address in the script, derives the three PDAs, checks account existence and mint ownership, and simulates an unsigned v0 initialization transaction. It prints the account addresses, rent/fee estimate, expiry height, and unsigned transaction as base64. It never loads private keys, signs, or broadcasts. A wallet client must deserialize and review the transaction, verify its connected address matches the payer, then request signing and submit it before expiry. Re-run preparation for a fresh blockhash if needed.
+
+## Brobets frontend
+
+The Next.js app lives in [`web/`](web/README.md). Run `cd web && npm ci && npm run db:generate && npm run dev` for the live devnet frontend. Helius email login, backend wallet sessions, admin question drafts, and devnet vault buy/redeem controls are included; setup is documented in the web README. Individual matched wagers are implemented additively alongside pooled betting. The new code must be deployed before real matching is available; see [`web/docs/MATCHING_DEPLOYMENT.md`](web/docs/MATCHING_DEPLOYMENT.md).
+
+### Sign initialization with the local Solana CLI wallet
+
+For the configured payer `GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG`, run from the repository root:
+
+```sh
+node scripts/initialize.cjs
+node scripts/initialize.cjs --send
+```
+
+The first command only verifies the configured CLI wallet's public address and simulates initialization on devnet. The second displays the accounts, rent, and network fee, then requires you to type `INITIALIZE DEVNET` in an interactive terminal. It refreshes and simulates the transaction again before signing locally with the existing wallet path from `solana config get`. The key remains on your Mac; no key material is printed or sent to RPC. Only the signed transaction is broadcast. The script prints its signature and Explorer link before submission, confirms the transaction, then verifies the vault accounts. It does not create a new wallet, transfer USDC, or deploy the program. Dependencies come from the existing `web` installation. If confirmation is interrupted, inspect the printed signature on devnet Explorer before retrying. An already initialized vault is detected and not re-created.
+
+## BROBETS token metadata
+
+The `create_token_metadata()` instruction creates Metaplex metadata for an existing vault token, using:
+
+- Name: `BROBETS`
+- Symbol: `BB`
+- URI: `https://alexnham.github.io/storage/brobets.json`
+- Update authority: `GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG`
+- Mutable: yes; royalties: zero; creators: none.
+
+Only that wallet may sign creation. The vault PDA signs the CPI as the existing mint authority. The instruction validates the vault, token mint, canonical metadata PDA, and Metaplex program. It does not change the vault state layout or issue tokens. Metadata creation is one-time; afterward the update authority can update branding directly through Metaplex without a Brobets instruction.
+
+For the existing devnet deployment, upgrade the **same program address**, then create metadata:
+
+```sh
+anchor build
+cargo test --workspace
+anchor deploy --provider.cluster devnet --provider.wallet ~/.config/solana/id.json
+node scripts/token-metadata.cjs
+node scripts/token-metadata.cjs --send
+```
+
+The last command simulates and shows the estimated SOL cost, including rent, network fee, and any Metaplex charge. It requires the configured CLI wallet to match the update authority and asks you to type `CREATE METADATA DEVNET` before signing locally. It refreshes the transaction, verifies the signature, simulates the signed transaction, then broadcasts and verifies the resulting metadata. The script detects matching existing metadata rather than creating it again. An interrupted submission prints its signature for lookup on devnet Explorer before any retry. An on-chain `InstructionFallbackNotFound` simulation error means the old deployment still lacks this instruction: upgrade it first. Do not re-run vault initialization.
+
+The upgrade command signs and uploads code using your local wallet and can incur additional rent if the larger binary requires more program storage. This is separate from metadata creation cost. Check the CLI wallet with `solana address` before running it.
+
+The LiteSVM integration test loads the devnet Metaplex program binary. Download this public executable once before running tests on a fresh checkout:
+
+```sh
+solana program dump metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s target/deploy/mpl_token_metadata.so --url devnet
+```
+
+The fixture lives under ignored build output. Tests cover unauthorized creation, substituted metadata addresses, actual Metaplex account creation, branding and update authority verification, mutability, and duplicate rejection. The pinned authority is modeled with test-only signature checking disabled; production still requires its signature. CLI tests separately verify real signatures using generated disposable keys.
+
+## Individual matched wagers (v1)
+
+`programs/token-vault/src/matching.rs` adds a separate market, immutable basketball questions, funded proposals, exact one-taker matching, cancellation, resolution/voiding, and independent payout/refund claims. Existing vault, metadata, and pooled-betting layouts and instruction signatures are unchanged. The market and questions require the configured Helius admin signature; each user signs their own token deposits and claims.
+
+New instructions: `initialize_matching`, `create_question`, `propose_wager`, `match_wager`, `cancel_wager`, `claim_wager`, `resolve_question`, `expire_question`. PDA seeds are `matching_v1`; `question_v1, question_id.to_le_bytes()`; `wager_v1, question, maker, proposal_id.to_le_bytes()`; and `wager_escrow_v1, wager`. The global market pins one vault mint, and stakes are bounded to half `u64::MAX` so two stakes cannot overflow. Program accounts remain allocated to prevent replay/reinitialization; unsolicited token donations are not distributed.
+
+Run `NO_DNA=1 anchor build`, `NO_DNA=1 cargo test --workspace`, then `cd web && npm run idl:sync && npm run test && npm run build`. Matching tests use LiteSVM with cryptographic signature verification disabled only to represent the Helius admin without holding its key; signer flags, authority checks, token transfers, and runtime account validation remain active. Original vault tests use real local test signatures.
+
+Deployment and admin initialization are separate wallet-authorized steps. See [`web/docs/MATCHING_DEPLOYMENT.md`](web/docs/MATCHING_DEPLOYMENT.md).

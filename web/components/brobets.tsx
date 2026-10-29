@@ -8,52 +8,82 @@ import {
   X,
   Check,
   ShieldCheck,
-  Clock3,
   Trophy,
   ChevronRight,
   Plus,
   CircleDot,
-  Menu,
 } from "lucide-react";
 import { VaultExchange } from "./vault-exchange";
-import { fixtures, transition, DEMO_USER } from "@/lib/demo";
 import { formatAmount, parseAmount } from "@/lib/money";
+import {
+  claimAmount,
+  MATCH_ADMIN,
+  type MatchAction,
+  type MatchInput,
+  type PreparedMatch,
+  type MarketSnapshot,
+} from "@/lib/matching";
 import type { Question, Wager, Side } from "@/lib/escrow";
-
 type WalletState = {
   address: string | null;
   admin: boolean;
   enabled: boolean;
-  connect: () => Promise<void>;
+  signIn: () => Promise<void>;
   authenticate: () => Promise<void>;
   logout: () => Promise<void>;
-  balances: { sol: string; usdc: string; tokens: string };
+  balances: {
+    sol: string;
+    usdc: string;
+    tokens: string;
+  };
   error: string;
+  refresh?: () => Promise<void>;
   exchange?: ReactNode;
+  prepareMatching?: (
+    action: MatchAction,
+    input: MatchInput,
+  ) => Promise<PreparedMatch>;
+  sendMatching?: (prepared: PreparedMatch) => Promise<string>;
+  recoverMatching?: () => Promise<string>;
 };
 const emptyWallet: WalletState = {
   address: null,
   admin: false,
   enabled: false,
-  connect: async () => {},
+  signIn: async () => {},
   authenticate: async () => {},
   logout: async () => {},
   balances: { sol: "—", usdc: "—", tokens: "—" },
   error: "",
 };
-export function Brobets({ walletEnabled }: { walletEnabled: boolean }) {
+export function Brobets({
+  walletEnabled,
+  initialQuestionId,
+}: {
+  walletEnabled: boolean;
+  initialQuestionId?: string;
+}) {
   return walletEnabled ? (
     <HeliusWalletProvider
       config={{
         cluster: "devnet",
-        authMethods: { email: true, passkey: false, wallet: false, sms: false },
+        authMethods: {
+          email: true,
+          passkey: false,
+          wallet: false,
+          sms: false,
+          google: false,
+          apple: false,
+          discord: false,
+          x: false,
+        },
         theme: { darkMode: true, primaryColor: "#ff7545" },
       }}
     >
-      <Connected />
+      <Connected initialQuestionId={initialQuestionId} />
     </HeliusWalletProvider>
   ) : (
-    <Board wallet={emptyWallet} />
+    <Board wallet={emptyWallet} initialQuestionId={initialQuestionId} />
   );
 }
 async function api(path: string, body?: object) {
@@ -66,22 +96,42 @@ async function api(path: string, body?: object) {
   if (!res.ok) throw Error(data.error ?? "Request failed");
   return data;
 }
-function Connected() {
+function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
   const w = useHeliusWallet();
   const [admin, setAdmin] = useState(false),
     [error, setError] = useState("");
   const [balances, setBalances] = useState(emptyWallet.balances);
   useEffect(() => {
     setAdmin(false);
+    setBalances(emptyWallet.balances);
     if (!w.address) return;
+    let cancelled = false;
     api("/api/auth/session")
-      .then((s) => setAdmin(s.wallet === w.address && s.admin))
+      .then((s) => {
+        if (!cancelled) setAdmin(s.wallet === w.address && s.admin);
+      })
       .catch(() => {});
     import("@/lib/wallet")
       .then((m) => m.readBalances(w.connection, w.address!))
-      .then(setBalances)
-      .catch((e) => setError(e.message));
+      .then((next) => {
+        if (!cancelled) setBalances(next);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [w.address, w.connection]);
+  const refresh = async () => {
+    if (!w.address) return;
+    try {
+      const { readBalances } = await import("@/lib/wallet");
+      setBalances(await readBalances(w.connection, w.address));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   const authenticate = async () => {
     try {
       const { message } = await api("/api/auth/challenge", {
@@ -93,18 +143,21 @@ function Connected() {
       setError("");
     } catch (e) {
       setError((e as Error).message);
+      throw e;
     }
   };
   return (
     <Board
+      initialQuestionId={initialQuestionId}
       wallet={{
         address: w.address,
-        admin,
+        admin: admin || w.address === MATCH_ADMIN,
         enabled: true,
         balances,
         error,
-        exchange: <VaultExchange />,
-        connect: async () => {
+        exchange: <VaultExchange onConfirmed={refresh} />,
+        refresh,
+        signIn: async () => {
           try {
             await w.login();
           } catch (e) {
@@ -112,6 +165,133 @@ function Connected() {
           }
         },
         authenticate,
+        prepareMatching: async (action, input) => {
+          if (!w.address || w.cluster !== "devnet")
+            throw Error("Sign in on devnet first.");
+          let current = await api("/api/auth/session");
+          if (current.wallet !== w.address) {
+            await authenticate();
+            current = await api("/api/auth/session");
+          }
+          if (
+            ["initialize", "create", "resolve"].includes(action) &&
+            !current.admin
+          )
+            throw Error(
+              "Server admin wallet configuration does not match this account.",
+            );
+          const { prepareMatching } = await import("@/lib/matching");
+          return prepareMatching(w.connection, w.address, action, input);
+        },
+        sendMatching: async (prepared) => {
+          if (
+            !w.address ||
+            w.cluster !== "devnet" ||
+            prepared.transaction.feePayer?.toBase58() !== w.address
+          )
+            throw Error("Wallet or network changed. Review again.");
+          if (
+            (await w.connection.getBlockHeight("confirmed")) >
+            prepared.lifetime.lastValidBlockHeight
+          )
+            throw Error("Review expired. Simulate again.");
+          const key = `brobets-matching-pending:${w.address}`;
+          const pending = localStorage.getItem(key);
+          if (pending)
+            throw Error(
+              `A previous transaction needs confirmation: ${pending}. Check its status before retrying.`,
+            );
+          // Persist the deterministic transaction signature before broadcast, so even
+          // a send timeout can be reconciled without risking a repeated deposit.
+          const signed = await w.signTransaction(
+            prepared.transaction.serialize({
+              requireAllSignatures: false,
+              verifySignatures: false,
+            }),
+          );
+          const { Transaction } = await import("@solana/web3.js");
+          const { default: bs58 } = await import("bs58");
+          const signedTransaction = Transaction.from(signed);
+          if (
+            !signedTransaction
+              .serializeMessage()
+              .equals(prepared.transaction.serializeMessage()) ||
+            !signedTransaction.verifySignatures()
+          )
+            throw Error("Wallet returned a modified or invalid transaction.");
+          const signatureBytes = signedTransaction.signature;
+          if (!signatureBytes)
+            throw Error("Wallet returned an unsigned transaction.");
+          const signature = bs58.encode(signatureBytes);
+          localStorage.setItem(
+            key,
+            JSON.stringify({
+              signature,
+              questionId: prepared.questionAddress,
+              action: prepared.action,
+              lastValidBlockHeight: prepared.lifetime.lastValidBlockHeight,
+            }),
+          );
+          await w.connection.sendRawTransaction(signed, {
+            skipPreflight: false,
+            maxRetries: 3,
+          });
+          const result = await w.connection.confirmTransaction(
+            { ...prepared.lifetime, signature },
+            "confirmed",
+          );
+          if (result.value.err) {
+            localStorage.removeItem(key);
+            throw Error(
+              `Transaction failed: ${JSON.stringify(result.value.err)}`,
+            );
+          }
+          localStorage.removeItem(key);
+          if (prepared.questionAddress) {
+            await api("/api/escrow", {
+              signature,
+              action: prepared.action,
+              questionId: prepared.questionAddress,
+            }).catch(() => {});
+          }
+          await refresh();
+          return signature;
+        },
+        recoverMatching: async () => {
+          if (!w.address) return "";
+          const key = `brobets-matching-pending:${w.address}`;
+          const raw = localStorage.getItem(key);
+          if (!raw) return "";
+          const pending = JSON.parse(raw);
+          const result = (
+            await w.connection.getSignatureStatuses([pending.signature], {
+              searchTransactionHistory: true,
+            })
+          ).value[0];
+          if (result?.err) {
+            localStorage.removeItem(key);
+            return `Failed transaction: ${pending.signature}. It is safe to prepare again.`;
+          }
+          if (
+            result?.confirmationStatus === "confirmed" ||
+            result?.confirmationStatus === "finalized"
+          ) {
+            localStorage.removeItem(key);
+            if (pending.questionId)
+              await api("/api/escrow", pending).catch(() => {});
+            await refresh();
+            return `Confirmed · ${pending.signature}`;
+          }
+          if (
+            !result &&
+            (await w.connection.getBlockHeight("finalized")) >
+              pending.lastValidBlockHeight
+          ) {
+            localStorage.removeItem(key);
+            return `Expired without confirmation: ${pending.signature}. You can prepare again.`;
+          }
+          return `Still pending: ${pending.signature}. Do not submit the wager again.`;
+        },
         logout: async () => {
           await fetch("/api/auth/session", { method: "DELETE" });
           await w.logout();
@@ -126,7 +306,13 @@ function closes(q: Question) {
   const hours = Math.ceil((Date.parse(q.closesAt) - Date.now()) / 3600000);
   return hours > 0 ? `Closes in ${hours}h` : "Betting closed";
 }
-function Board({ wallet }: { wallet: WalletState }) {
+function Board({
+  wallet,
+  initialQuestionId,
+}: {
+  wallet: WalletState;
+  initialQuestionId?: string;
+}) {
   const [questions, setQuestions] = useState<Question[]>([]),
     [wagers, setWagers] = useState<Wager[]>([]),
     [ready, setReady] = useState(false);
@@ -138,42 +324,78 @@ function Board({ wallet }: { wallet: WalletState }) {
     [side, setSide] = useState<Side>("a"),
     [amount, setAmount] = useState("5");
   const [review, setReview] = useState<{
-      action: "propose" | "match" | "cancel" | "claim";
+      action: MatchAction;
       question: Question;
       wager?: Wager;
     } | null>(null),
     [status, setStatus] = useState(""),
     [busy, setBusy] = useState(false);
-  const [demoAdmin, setDemoAdmin] = useState(false),
-    [notice, setNotice] = useState("");
-  useEffect(() => {
-    const seed = fixtures();
-    try {
-      const saved = sessionStorage.getItem("brobets-demo-v1");
-      const data = saved ? JSON.parse(saved) : seed;
-      setQuestions(data.questions);
-      setWagers(data.wagers);
-    } catch {
-      setQuestions(seed.questions);
-      setWagers(seed.wagers);
-    }
+  const actor = wallet.address;
+  const [marketReady, setMarketReady] = useState(false);
+  const [prepared, setPrepared] = useState<PreparedMatch | null>(null);
+  const loadMarket = async () => {
+    const data: MarketSnapshot = await api("/api/market");
+    setQuestions(data.questions);
+    setWagers(data.wagers);
+    setMarketReady(data.ready);
     setReady(true);
+    setSelected((current) =>
+      current
+        ? (data.questions.find((q) => q.id === current.id) ?? null)
+        : null,
+    );
+  };
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    const load = () => {
+      void loadMarket().catch((e) => {
+        setNotice(e.message);
+        setReady(true);
+      });
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    window.addEventListener("focus", load);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", load);
+    };
   }, []);
   useEffect(() => {
-    if (ready)
-      sessionStorage.setItem(
-        "brobets-demo-v1",
-        JSON.stringify({ questions, wagers }),
-      );
-  }, [questions, wagers, ready]);
+    if (ready && initialQuestionId) {
+      const question = questions.find((q) => q.id === initialQuestionId);
+      if (question) setSelected(question);
+      else
+        setNotice(
+          "This question is unavailable. Refresh the board and try again.",
+        );
+    }
+  }, [ready, initialQuestionId]);
+  useEffect(() => {
+    if (wallet.address && wallet.recoverMatching) {
+      void wallet
+        .recoverMatching()
+        .then((message) => {
+          if (message) {
+            setNotice(message);
+            void loadMarket().catch(() => {});
+          }
+        })
+        .catch((e) =>
+          setNotice(`Pending transaction recovery failed: ${e.message}`),
+        );
+    }
+  }, [wallet.address]);
+  const closeQuestion = () => {
+    setSelected(null);
+    window.history.replaceState(null, "", "/");
+  };
   const open = wagers.filter(
     (w) =>
       w.state === "open" &&
       !questions.find((q) => q.id === w.questionId)?.result,
   );
-  const mine = wagers.filter(
-    (w) => w.maker === DEMO_USER || w.taker === DEMO_USER,
-  );
+  const mine = wagers.filter((w) => w.maker === actor || w.taker === actor);
   const visible = questions.filter(
     (q) =>
       (filter !== "Open for bets" || Date.parse(q.closesAt) > Date.now()) &&
@@ -185,49 +407,53 @@ function Board({ wallet }: { wallet: WalletState }) {
   const run = async () => {
     if (!review) return;
     setBusy(true);
-    setStatus("Pending · checking demo escrow…");
+    setStatus("Waiting for wallet approval and on-chain confirmation…");
     try {
-      await new Promise((r) => setTimeout(r, 450));
-      setWagers((current) =>
-        transition(
-          current,
-          questions,
-          review.action,
-          {
-            questionId: review.question.id,
-            wagerId: review.wager?.id,
-            side,
-            amount,
-          },
-          DEMO_USER,
-        ),
-      );
-      setStatus("Confirmed · demo only, no funds moved.");
+      if (!prepared || !wallet.sendMatching)
+        throw Error("Simulate this action before signing.");
+      const signature = await wallet.sendMatching(prepared);
+      setStatus(`Confirmed · ${signature}`);
+      await loadMarket();
+      return;
     } catch (e) {
       setStatus(`Failed · ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
   };
-  const start = (
-    action: "propose" | "match" | "cancel" | "claim",
+  const start = async (
+    action: MatchAction,
     question: Question,
     wager?: Wager,
+    outcome?: Side | "void",
   ) => {
+    setPrepared(null);
+    setStatus("");
     try {
       if (action === "propose") parseAmount(amount);
+      if (!wallet.address || !wallet.prepareMatching) {
+        setModal("wallet");
+        return;
+      }
+      setBusy(true);
+      setNotice(
+        "Checking wallet session and simulating the devnet transaction…",
+      );
+      const next = await wallet.prepareMatching(action, {
+        question,
+        wager,
+        side,
+        amount,
+        outcome,
+      });
+      setPrepared(next);
+      setNotice("");
       setReview({ action, question, wager });
-      setStatus("");
     } catch (e) {
       setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
     }
-  };
-  const reset = () => {
-    const seed = fixtures();
-    setQuestions(seed.questions);
-    setWagers(seed.wagers);
-    setDemoAdmin(false);
-    setNotice("Demo reset.");
   };
   return (
     <div className="shell">
@@ -278,9 +504,6 @@ function Board({ wallet }: { wallet: WalletState }) {
           <ShieldCheck size={16} />
           <span>Equal stakes. On-chain escrow.</span>
         </div>
-        <button className="text-button" onClick={reset}>
-          Reset demo
-        </button>
       </aside>
       <div className="main-wrap">
         <header className="topbar">
@@ -288,40 +511,92 @@ function Board({ wallet }: { wallet: WalletState }) {
             The court <span>/</span> {tab === "board" ? "Bet board" : "My bets"}
           </span>
           <div className="top-actions">
+            <button
+              className="header-balance"
+              onClick={() => setModal("wallet")}
+              aria-label={`Brobets balance: ${wallet.address ? wallet.balances.tokens : "Sign in to view"}. Open wallet`}
+            >
+              <span>Brobets</span>
+              <strong>{wallet.address ? wallet.balances.tokens : "—"}</strong>
+            </button>
             <span className="network">
               <i /> Devnet
             </span>
             <button
               className="wallet-button"
-              onClick={() => setModal("wallet")}
+              onClick={() =>
+                wallet.address || !wallet.enabled
+                  ? setModal("wallet")
+                  : void wallet.signIn()
+              }
             >
               <Wallet size={16} />
               {wallet.address
                 ? wallet.address.slice(0, 4) + "…" + wallet.address.slice(-4)
-                : "Connect wallet"}
+                : "Sign in with email"}
             </button>
           </div>
         </header>
         <main>
-          <div className="demo-banner">
+          <div className="market-banner">
             <span>
-              <b>Demo court</b> · Sample games and simulated wagers. No real
-              funds move.
+              {
+                <>
+                  <b>Devnet court</b> ·{" "}
+                  {!wallet.enabled
+                    ? "Helius email sign-in is not configured."
+                    : marketReady
+                      ? "Real Brobets escrow. Review and sign every transaction."
+                      : "Matching contract awaits program upgrade and admin initialization."}
+                </>
+              }
             </span>
-            <button
-              onClick={() => {
-                setDemoAdmin(!demoAdmin);
-                setNotice(
-                  !demoAdmin
-                    ? "Demo admin enabled. This grants no backend permissions."
-                    : "Demo admin disabled.",
-                );
-              }}
-            >
-              {demoAdmin ? "Exit demo admin" : "Try admin view"}
-              <ArrowUpRight size={14} />
-            </button>
+            {
+              <button
+                onClick={() =>
+                  void loadMarket().catch((e) => setNotice(e.message))
+                }
+              >
+                Refresh board
+              </button>
+            }
           </div>
+          {!marketReady && wallet.admin && (
+            <div className="notice">
+              <span>
+                Initialize matching after the upgraded program is deployed.
+              </span>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={async () => {
+                  try {
+                    if (!wallet.prepareMatching) return;
+                    const next = await wallet.prepareMatching("initialize", {});
+                    setPrepared(next);
+                    setReview({
+                      action: "initialize",
+                      question: {
+                        id: "setup",
+                        title: "Initialize matching",
+                        sideA: "",
+                        sideB: "",
+                        closesAt: "",
+                        resolveBy: "",
+                        category: "",
+                        matchup: "",
+                      },
+                    });
+                    setStatus("");
+                  } catch (e) {
+                    setNotice((e as Error).message);
+                  }
+                }}
+              >
+                Review initialization
+              </button>
+            </div>
+          )}
           {notice && (
             <div className="notice" role="status">
               {notice}
@@ -378,7 +653,7 @@ function Board({ wallet }: { wallet: WalletState }) {
                   </span>
                 </div>
               </section>
-              <section className="stats" aria-label="Demo activity">
+              <section className="stats" aria-label={"Devnet activity"}>
                 <div>
                   <span>Open proposals</span>
                   <strong>
@@ -390,7 +665,7 @@ function Board({ wallet }: { wallet: WalletState }) {
                   <span>On the board</span>
                   <strong>
                     {dollars(open.reduce((s, w) => s + BigInt(w.units), 0n))}
-                    <small>Demo vault tokens</small>
+                    <small>{"Brobets tokens"}</small>
                   </strong>
                 </div>
                 <div>
@@ -409,7 +684,7 @@ function Board({ wallet }: { wallet: WalletState }) {
                     </h2>
                     <p>Pick a game. Find a take worth matching.</p>
                   </div>
-                  {(demoAdmin || wallet.admin) && (
+                  {wallet.admin && marketReady && (
                     <button
                       className="secondary"
                       onClick={() => setModal("admin")}
@@ -447,6 +722,11 @@ function Board({ wallet }: { wallet: WalletState }) {
                         key={q.id}
                         onClick={() => {
                           setSelected(q);
+                          window.history.replaceState(
+                            null,
+                            "",
+                            `/questions/${encodeURIComponent(q.id)}`,
+                          );
                           setSide("a");
                         }}
                       >
@@ -492,7 +772,15 @@ function Board({ wallet }: { wallet: WalletState }) {
                   })}
                 </div>
                 {!visible.length && (
-                  <div className="empty">No games match your search.</div>
+                  <div className="empty">
+                    {!ready
+                      ? "Loading basketball questions…"
+                      : !marketReady
+                        ? "Matching setup is required before questions can be published."
+                        : questions.length === 0
+                          ? "No basketball questions have been published yet."
+                          : "No games match your search."}
+                  </div>
                 )}
               </section>
             </>
@@ -501,10 +789,20 @@ function Board({ wallet }: { wallet: WalletState }) {
               <div className="section-heading">
                 <div>
                   <h1 className="page-title">Your side of the game.</h1>
-                  <p>Track proposals, matchups, and payouts. Demo account.</p>
+                  <p>
+                    Track proposals, matchups, and payouts.
+                    {" Your devnet wallet."}
+                  </p>
                 </div>
               </div>
               <div className="wager-list">
+                {!mine.length && (
+                  <div className="empty">
+                    {actor
+                      ? "You have no wagers yet."
+                      : "Sign in with email to view your wagers."}
+                  </div>
+                )}
                 {mine.map((w) => {
                   const q = questions.find((q) => q.id === w.questionId)!;
                   return (
@@ -512,8 +810,14 @@ function Board({ wallet }: { wallet: WalletState }) {
                       <div>
                         <small>{q.matchup}</small>
                         <h3>
-                          {w.side === "a" ? q.sideA : q.sideB} ·{" "}
-                          {dollars(w.units)}
+                          {(w.maker === actor
+                            ? w.side
+                            : w.side === "a"
+                              ? "b"
+                              : "a") === "a"
+                            ? q.sideA
+                            : q.sideB}{" "}
+                          · {dollars(w.units)}
                         </h3>
                         <span className="muted">
                           {w.state} {q.result ? "· Result available" : ""}
@@ -526,7 +830,7 @@ function Board({ wallet }: { wallet: WalletState }) {
                         >
                           View
                         </button>
-                        {w.state === "open" && (
+                        {w.state === "open" && w.maker === actor && (
                           <button
                             className="secondary"
                             onClick={() => start("cancel", q, w)}
@@ -534,16 +838,14 @@ function Board({ wallet }: { wallet: WalletState }) {
                             Cancel
                           </button>
                         )}
-                        {!["claimed", "cancelled"].includes(w.state) &&
-                          (q.result ||
-                            Date.parse(q.closesAt) <= Date.now()) && (
-                            <button
-                              className="primary"
-                              onClick={() => start("claim", q, w)}
-                            >
-                              Claim
-                            </button>
-                          )}
+                        {actor && claimAmount(q, w, actor) > 0n && (
+                          <button
+                            className="primary"
+                            onClick={() => start("claim", q, w)}
+                          >
+                            Claim
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -554,12 +856,12 @@ function Board({ wallet }: { wallet: WalletState }) {
           <footer>
             <span className="brand-small">brobets.</span>
             <span>For the love of the game.</span>
-            <span>Devnet demo · No platform fees</span>
+            <span>{"Devnet escrow"} · No platform fees</span>
           </footer>
         </main>
       </div>
       {selected && (
-        <Modal title={selected.title} onClose={() => setSelected(null)}>
+        <Modal title={selected.title} onClose={closeQuestion}>
           <p className="muted">
             {selected.matchup} · {closes(selected)}
           </p>
@@ -575,6 +877,11 @@ function Board({ wallet }: { wallet: WalletState }) {
               </button>
             ))}
           </div>
+          {notice && (
+            <p className="error" role="status">
+              {notice}
+            </p>
+          )}
           <h3>Put up a proposal</h3>
           <label className="field">
             Your stake in vault tokens
@@ -590,11 +897,13 @@ function Board({ wallet }: { wallet: WalletState }) {
           <button
             className="primary wide"
             disabled={
-              !!selected.result || Date.parse(selected.closesAt) <= Date.now()
+              busy ||
+              !!selected.result ||
+              Date.parse(selected.closesAt) <= Date.now()
             }
             onClick={() => start("propose", selected)}
           >
-            Review demo proposal <ArrowRight size={16} />
+            {"Simulate and review proposal"} <ArrowRight size={16} />
           </button>
           <h3 className="modal-section">Waiting for a match</h3>
           {wagers
@@ -604,25 +913,23 @@ function Board({ wallet }: { wallet: WalletState }) {
                 <div>
                   <b>{w.side === "a" ? selected.sideA : selected.sideB}</b>
                   <small>
-                    {w.maker === DEMO_USER ? "Your proposal" : "Rival’s pick"}
+                    {w.maker === actor ? "Your proposal" : "Rival’s pick"}
                   </small>
                 </div>
                 <strong>{dollars(w.units)}</strong>
                 <button
                   className="secondary"
                   disabled={
-                    !!selected.result ||
-                    Date.parse(selected.closesAt) <= Date.now()
+                    busy ||
+                    (w.maker !== actor &&
+                      (!!selected.result ||
+                        Date.parse(selected.closesAt) <= Date.now()))
                   }
                   onClick={() =>
-                    start(
-                      w.maker === DEMO_USER ? "cancel" : "match",
-                      selected,
-                      w,
-                    )
+                    start(w.maker === actor ? "cancel" : "match", selected, w)
                   }
                 >
-                  {w.maker === DEMO_USER ? "Cancel" : "Match"}
+                  {w.maker === actor ? "Cancel" : "Match"}
                 </button>
               </div>
             ))}
@@ -631,9 +938,9 @@ function Board({ wallet }: { wallet: WalletState }) {
           ) && (
             <p className="muted">No open proposals. Start the conversation.</p>
           )}
-          {demoAdmin && !selected.result && (
+          {wallet.admin && !selected.result && (
             <div className="admin-box">
-              <h3>Demo resolution</h3>
+              <h3>{"Resolve question"}</h3>
               <p className="hint">
                 Resolution is available after betting closes.
               </p>
@@ -642,13 +949,14 @@ function Board({ wallet }: { wallet: WalletState }) {
                   <button
                     key={result}
                     className="secondary"
-                    disabled={Date.parse(selected.closesAt) > Date.now()}
+                    disabled={
+                      busy ||
+                      Date.parse(selected.closesAt) > Date.now() ||
+                      Date.parse(selected.resolveBy) <= Date.now()
+                    }
                     onClick={() => {
-                      const next = { ...selected, result };
-                      setQuestions((qs) =>
-                        qs.map((q) => (q.id === next.id ? next : q)),
-                      );
-                      setSelected(next);
+                      void start("resolve", selected, undefined, result);
+                      return;
                     }}
                   >
                     {result === "void"
@@ -668,28 +976,40 @@ function Board({ wallet }: { wallet: WalletState }) {
             if (!busy) setReview(null);
           }}
         >
-          <span className="demo-tag">Simulated transaction · Devnet</span>
+          <span className="status-tag">
+            {"Simulation passed · Devnet escrow"}
+          </span>
           <h3>
-            {review.action === "match"
-              ? `Back ${review.wager?.side === "a" ? review.question.sideB : review.question.sideA}`
-              : review.action === "propose"
-                ? `Back ${side === "a" ? review.question.sideA : review.question.sideB}`
-                : review.action === "cancel"
-                  ? "Cancel unmatched proposal"
-                  : "Claim available payout"}
+            {review.action === "create"
+              ? "Publish basketball question"
+              : review.action === "initialize"
+                ? "Initialize matching market"
+                : review.action === "resolve"
+                  ? "Settle question outcome"
+                  : review.action === "expire"
+                    ? "Enable deadline refunds"
+                    : review.action === "match"
+                      ? `Back ${review.wager?.side === "a" ? review.question.sideB : review.question.sideA}`
+                      : review.action === "propose"
+                        ? `Back ${side === "a" ? review.question.sideA : review.question.sideB}`
+                        : review.action === "cancel"
+                          ? "Cancel unmatched proposal"
+                          : "Claim available payout"}
           </h3>
           <dl className="review">
             <div>
               <dt>Stake</dt>
-              <dd>{dollars(review.wager?.units ?? parseAmount(amount))}</dd>
+              <dd>{dollars(prepared?.stake ?? "0")}</dd>
             </div>
             <div>
-              <dt>Potential winning payout</dt>
-              <dd>
-                {dollars(
-                  BigInt(review.wager?.units ?? parseAmount(amount)) * 2n,
-                )}
-              </dd>
+              <dt>
+                {review.action === "cancel"
+                  ? "Refund"
+                  : review.action === "claim"
+                    ? "Available payout"
+                    : "Potential winning payout"}
+              </dt>
+              <dd>{dollars(prepared?.payout ?? "0")}</dd>
             </div>
             <div>
               <dt>Platform fee</dt>
@@ -697,25 +1017,42 @@ function Board({ wallet }: { wallet: WalletState }) {
             </div>
             <div>
               <dt>Network fee</dt>
-              <dd>Simulated · 0 SOL charged</dd>
+              <dd>{`${(prepared?.feeLamports ?? 0) / 1e9} SOL`}</dd>
             </div>
           </dl>
-          <p className="hint">
-            No wallet signature will be requested. Real funding is disabled
-            until the matching escrow deployment is connected.
-          </p>
+          {
+            <>
+              <p className="hint">
+                Fee payer: your Helius wallet. Account rent: up to{" "}
+                {(prepared?.rentLamports ?? 0) / 1e9} SOL. Brobets tokens only;
+                no platform fee.
+              </p>
+              <p className="hint wallet-address">
+                {prepared?.escrowAddress
+                  ? `Escrow recipient: ${prepared.escrowAddress}`
+                  : `Question: ${prepared?.questionAddress ?? "Matching market setup"}`}
+              </p>
+              <p className="hint">
+                {review.action === "resolve"
+                  ? `Selected result: ${prepared?.transaction.instructions.at(-1)?.data.at(-1) === 1 ? review.question.sideA : prepared?.transaction.instructions.at(-1)?.data.at(-1) === 2 ? review.question.sideB : "Void and refund both sides"}`
+                  : "Check the stake and payout before approving the wallet signature."}
+              </p>
+            </>
+          }
           <div role="status" className="transaction-status">
             {status}
           </div>
           {!status.startsWith("Confirmed") && (
             <button className="primary wide" disabled={busy} onClick={run}>
-              {busy ? "Pending…" : "Confirm demo action"}
+              {busy ? "Pending…" : "Approve and sign transaction"}
             </button>
           )}
           <button
             className="text-button wide"
             disabled={busy}
             onClick={() => {
+              setPrepared(null);
+              setReview(null);
               setStatus("Rejected · action cancelled. No funds moved.");
             }}
           >
@@ -725,7 +1062,7 @@ function Board({ wallet }: { wallet: WalletState }) {
       )}
       {modal === "wallet" && (
         <Modal title="Your wallet. Your game." onClose={() => setModal(null)}>
-          <span className="demo-tag">Helius embedded wallet · Devnet</span>
+          <span className="status-tag">Helius embedded wallet · Devnet</span>
           <p className="muted">
             Sign in with an email code. Your wallet stays in your control.
           </p>
@@ -748,9 +1085,29 @@ function Board({ wallet }: { wallet: WalletState }) {
                     </div>
                   ))}
                 </div>
+                {wallet.recoverMatching && (
+                  <button
+                    className="secondary wide"
+                    onClick={() =>
+                      void wallet.recoverMatching!()
+                        .then((message) => {
+                          setNotice(
+                            message || "No pending matching transaction.",
+                          );
+                          void loadMarket().catch(() => {});
+                        })
+                        .catch((e) => setNotice(e.message))
+                    }
+                  >
+                    Check pending betting transaction
+                  </button>
+                )}
+                <button className="text-button wide" onClick={wallet.refresh}>
+                  Refresh balances
+                </button>
                 <button
                   className="secondary wide"
-                  onClick={wallet.authenticate}
+                  onClick={() => void wallet.authenticate().catch(() => {})}
                 >
                   Verify wallet for backend access
                 </button>
@@ -759,7 +1116,7 @@ function Board({ wallet }: { wallet: WalletState }) {
                 </button>
               </>
             ) : (
-              <button className="primary wide" onClick={wallet.connect}>
+              <button className="primary wide" onClick={wallet.signIn}>
                 Sign in with email <ArrowRight size={16} />
               </button>
             )
@@ -793,31 +1150,19 @@ function Board({ wallet }: { wallet: WalletState }) {
       )}
       {modal === "admin" && (
         <Modal
-          title={demoAdmin ? "Create a demo question" : "Save question draft"}
+          title={"Publish a basketball question"}
           onClose={() => setModal(null)}
         >
           <QuestionForm
-            demo={demoAdmin}
             onSubmit={async (values) => {
-              if (demoAdmin) {
-                setQuestions((q) => [
-                  ...q,
-                  {
-                    ...values,
-                    id: crypto.randomUUID(),
-                    category: "Game winner",
-                    matchup: `${values.sideA} / ${values.sideB}`,
-                  },
-                ]);
-                setNotice(
-                  "Demo question published. No on-chain account created.",
-                );
-              } else {
-                await api("/api/questions", values);
-                setNotice(
-                  "Draft saved. Publishing awaits the matching escrow integration.",
-                );
-              }
+              if (!wallet.prepareMatching)
+                throw Error("Sign in as admin first");
+              const next = await wallet.prepareMatching("create", {
+                draft: values,
+              });
+              setPrepared(next);
+              setReview({ action: "create", question: next.question! });
+              setStatus("");
               setModal(null);
             }}
           />
@@ -827,10 +1172,8 @@ function Board({ wallet }: { wallet: WalletState }) {
   );
 }
 function QuestionForm({
-  demo,
   onSubmit,
 }: {
-  demo: boolean;
   onSubmit: (values: {
     title: string;
     sideA: string;
@@ -900,7 +1243,7 @@ function QuestionForm({
         </p>
       )}
       <button className="primary wide" disabled={busy}>
-        {busy ? "Saving…" : demo ? "Publish demo question" : "Save draft"}
+        {busy ? "Checking…" : "Simulate and review publication"}
       </button>
     </form>
   );
@@ -919,7 +1262,8 @@ function Modal({
   closeHandler.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
-    dialog.current?.showModal();
+    const node = dialog.current;
+    node?.showModal();
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -929,7 +1273,8 @@ function Modal({
     document.addEventListener("keydown", handler);
     return () => {
       document.removeEventListener("keydown", handler);
-      previous?.focus();
+      node?.close();
+      queueMicrotask(() => previous?.focus());
     };
   }, []);
   return (

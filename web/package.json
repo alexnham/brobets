@@ -10,7 +10,8 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "db:migrate": "prisma migrate deploy",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "idl:sync": "node scripts/sync-matching-idl.mjs"
   },
   "keywords": [],
   "author": "",
