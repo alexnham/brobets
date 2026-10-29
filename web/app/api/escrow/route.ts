@@ -10,6 +10,7 @@ const schema = z.object({
   signature: z.string().min(64).max(88),
   action: z.enum([
     "create",
+    "edit",
     "propose",
     "match",
     "cancel",
@@ -21,6 +22,7 @@ const schema = z.object({
 });
 const names = {
   create: "create_question",
+  edit: "edit_question",
   propose: "propose_wager",
   match: "match_wager",
   cancel: "cancel_wager",
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
         adminWallet: snapshot.admin,
         chainAddress: q.id,
       },
-      update: {},
+      update: { title: q.title, closesAt: q.closesAt, resolveBy: q.resolveBy },
     });
     await db.transactionReference.upsert({
       where: { signature: input.signature },

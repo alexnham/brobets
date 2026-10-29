@@ -91,14 +91,16 @@ test("funding requires a real wallet and never produces a synthetic confirmation
   ).toHaveCount(0);
   await expect(page.getByText(/Confirmed ·/)).toHaveCount(0);
 });
-test("closed questions disable funding and signed-out accounts have no wagers", async ({
+test("closed questions hide proposals and signed-out accounts have no wagers", async ({
   page,
 }) => {
   await market(page, [question("celtics-knicks", "Celtics", "Knicks", true)]);
   await page.goto("/questions/celtics-knicks");
   await expect(
     page.getByRole("button", { name: "Simulate and review proposal" }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Put up a proposal" })).toHaveCount(0);
+  await expect(page.getByText("Your stake in vault tokens")).toHaveCount(0);
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "My bets", exact: true }).click();
   await expect(
@@ -140,4 +142,14 @@ test("keyboard focus, mobile overflow and accessibility", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".game-card")).toBeFocused();
+});
+
+test("unresolved questions past betting close hide the proposal form", async ({ page }) => {
+  const closed = { ...question("closed-game", "Lakers", "Warriors", true), result: undefined };
+  await market(page, [closed]);
+  await page.goto("/questions/closed-game");
+  await expect(page.getByText("Betting is closed. No new proposals can be posted.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Put up a proposal" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Simulate and review proposal" })).toHaveCount(0);
+  await expect(page.getByText("No open proposals.", { exact: true })).toBeVisible();
 });

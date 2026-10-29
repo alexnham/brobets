@@ -376,6 +376,72 @@
       ]
     },
     {
+      "name": "edit_question",
+      "discriminator": [
+        241,
+        231,
+        179,
+        25,
+        20,
+        133,
+        94,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "address": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
+          "relations": [
+            "question"
+          ]
+        },
+        {
+          "name": "question",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "question.question_id",
+                "account": "MatchQuestion"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "closes_at",
+          "type": "i64"
+        },
+        {
+          "name": "resolve_by",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "expire_question",
       "discriminator": [
         187,

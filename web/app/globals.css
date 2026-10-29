@@ -929,6 +929,32 @@ footer {
 .wager-row h3 {
   margin: 10px 0;
 }
+.wager-row.wager-won {
+  border-color: #71ce96;
+  border-left-width: 5px;
+  background: #192b22;
+}
+.win-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #99efb7;
+  font-size: 22px;
+  font-weight: 800;
+}
+.win-payout {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.win-payout strong {
+  font-size: 18px;
+  color: #99efb7;
+}
+.win-payout span {
+  color: #c6d5cb;
+  font-size: 12px;
+}
 .empty {
   text-align: center;
   color: var(--muted);

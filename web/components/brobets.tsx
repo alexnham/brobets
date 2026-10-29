@@ -24,6 +24,7 @@ import {
   type MarketSnapshot,
 } from "@/lib/matching";
 import type { Question, Wager, Side } from "@/lib/escrow";
+import { wagerResult } from "@/lib/escrow";
 type WalletState = {
   address: string | null;
   admin: boolean;
@@ -174,7 +175,7 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
             current = await api("/api/auth/session");
           }
           if (
-            ["initialize", "create", "resolve"].includes(action) &&
+            ["initialize", "create", "edit", "resolve"].includes(action) &&
             !current.admin
           )
             throw Error(
@@ -805,9 +806,14 @@ function Board({
                 )}
                 {mine.map((w) => {
                   const q = questions.find((q) => q.id === w.questionId)!;
+                  const result = wagerResult(q, w, actor);
+                  const payout = actor ? claimAmount(q, w, actor) : 0n;
                   return (
-                    <div className="wager-row" key={w.id}>
+                    <div className={`wager-row${result === "won" ? " wager-won" : ""}`} key={w.id}>
                       <div>
+                        {result === "won" && (
+                          <div className="win-label"><Trophy size={20} aria-hidden="true" /> You won!</div>
+                        )}
                         <small>{q.matchup}</small>
                         <h3>
                           {(w.maker === actor
@@ -819,9 +825,17 @@ function Board({
                             : q.sideB}{" "}
                           · {dollars(w.units)}
                         </h3>
-                        <span className="muted">
-                          {w.state} {q.result ? "· Result available" : ""}
-                        </span>
+                        {result === "won" ? (
+                          <div className="win-payout">
+                            <strong>{dollars(BigInt(w.units) * 2n)} payout</strong>
+                            <span>+{dollars(w.units)} profit · {w.claimedBy?.includes(actor!) ? "Payout claimed" : "Ready to claim"}</span>
+                          </div>
+                        ) : (
+                          <span className="muted">
+                            {result === "lost" ? "You lost" : w.state}
+                            {!result && q.result ? " · Result available" : ""}
+                          </span>
+                        )}
                       </div>
                       <div className="row-actions">
                         <button
@@ -838,12 +852,12 @@ function Board({
                             Cancel
                           </button>
                         )}
-                        {actor && claimAmount(q, w, actor) > 0n && (
+                        {payout > 0n && (
                           <button
                             className="primary"
                             onClick={() => start("claim", q, w)}
                           >
-                            Claim
+                            {result === "won" ? `Claim ${dollars(payout)} winnings` : `Claim ${dollars(payout)} refund`}
                           </button>
                         )}
                       </div>
@@ -865,6 +879,7 @@ function Board({
           <p className="muted">
             {selected.matchup} · {closes(selected)}
           </p>
+          {!selected.result && Date.parse(selected.closesAt) > Date.now() && <>
           <div className="outcomes">
             {(["a", "b"] as Side[]).map((s) => (
               <button
@@ -877,11 +892,6 @@ function Board({
               </button>
             ))}
           </div>
-          {notice && (
-            <p className="error" role="status">
-              {notice}
-            </p>
-          )}
           <h3>Put up a proposal</h3>
           <label className="field">
             Your stake in vault tokens
@@ -905,6 +915,15 @@ function Board({
           >
             {"Simulate and review proposal"} <ArrowRight size={16} />
           </button>
+          </>}
+          {notice && (
+            <p className="error" role="status">
+              {notice}
+            </p>
+          )}
+          {!selected.result && Date.parse(selected.closesAt) <= Date.now() && (
+            <p className="hint">Betting is closed. No new proposals can be posted.</p>
+          )}
           <h3 className="modal-section">Waiting for a match</h3>
           {wagers
             .filter((w) => w.questionId === selected.id && w.state === "open")
@@ -936,7 +955,21 @@ function Board({
           {!wagers.some(
             (w) => w.questionId === selected.id && w.state === "open",
           ) && (
-            <p className="muted">No open proposals. Start the conversation.</p>
+            <p className="muted">{!selected.result && Date.parse(selected.closesAt) > Date.now() ? "No open proposals. Start the conversation." : "No open proposals."}</p>
+          )}
+          {wallet.admin && !selected.result && Date.parse(selected.resolveBy) > Date.now() && (
+            <QuestionEditor
+              key={selected.id + selected.title + selected.closesAt + selected.resolveBy}
+              question={selected}
+              save={async (draft) => {
+                if (!wallet.prepareMatching) throw Error("Sign in as admin first");
+                const next = await wallet.prepareMatching("edit", { question: selected, draft });
+                setPrepared(next);
+                setReview({ action: "edit", question: next.question! });
+                setSelected(null);
+                setStatus("");
+              }}
+            />
           )}
           {wallet.admin && !selected.result && (
             <div className="admin-box">
@@ -982,6 +1015,8 @@ function Board({
           <h3>
             {review.action === "create"
               ? "Publish basketball question"
+              : review.action === "edit"
+                ? "Correct question and deadlines"
               : review.action === "initialize"
                 ? "Initialize matching market"
                 : review.action === "resolve"
@@ -996,6 +1031,12 @@ function Board({
                           ? "Cancel unmatched proposal"
                           : "Claim available payout"}
           </h3>
+          {review.action === "edit" && <>
+            <h3>{review.question.title}</h3>
+            <p>Betting closes: {new Date(review.question.closesAt).toLocaleString()}</p>
+            <p>Resolve by: {new Date(review.question.resolveBy).toLocaleString()}</p>
+            <p className="hint">These deadlines apply to existing wagers too. Outcomes and stakes stay fixed.</p>
+          </>}
           <dl className="review">
             <div>
               <dt>Stake</dt>
@@ -1170,6 +1211,46 @@ function Board({
       )}
     </div>
   );
+}
+function QuestionEditor({ question, save }: {
+  question: Question;
+  save: (draft: MatchInput["draft"]) => Promise<void>;
+}) {
+  const localDate = (value: string) => {
+    const date = new Date(value);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  };
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  return <div className="admin-box">
+    {!editing ? <button className="secondary" onClick={() => setEditing(true)}>Edit slip</button> : (
+      <form onSubmit={async (event) => {
+        event.preventDefault();
+        const fields = new FormData(event.currentTarget);
+        setSaving(true);
+        setError("");
+        try {
+          await save({ ...question, title: String(fields.get("title")).trim(), closesAt: new Date(String(fields.get("closesAt"))).toISOString(), resolveBy: new Date(String(fields.get("resolveBy"))).toISOString() });
+          setEditing(false);
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setSaving(false);
+        }
+      }}>
+        <label>Question text<input name="title" defaultValue={question.title} minLength={10} maxLength={200} required disabled={saving} /></label>
+        <label>Betting closes<input name="closesAt" type="datetime-local" step="1" defaultValue={localDate(question.closesAt)} required disabled={saving} /></label>
+        <label>Resolve by<input name="resolveBy" type="datetime-local" step="1" defaultValue={localDate(question.resolveBy)} required disabled={saving} /></label>
+        <p className="hint">Times are in {Intl.DateTimeFormat().resolvedOptions().timeZone}. Deadline corrections apply to existing wagers. Outcomes and stakes stay fixed.</p>
+        {error && <p role="alert">{error}</p>}
+        <div className="row-actions">
+          <button disabled={saving}>{saving ? "Preparing…" : "Review correction"}</button>
+          <button type="button" className="secondary" disabled={saving} onClick={() => { setError(""); setEditing(false); }}>Cancel</button>
+        </div>
+      </form>
+    )}
+  </div>;
 }
 function QuestionForm({
   onSubmit,

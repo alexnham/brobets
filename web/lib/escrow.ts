@@ -22,3 +22,12 @@ export type Question = {
   category: string;
   result?: Side | "void";
 };
+
+export function wagerResult(q: Question, w: Wager, user: string | null) {
+  // A cancelled or never-matched proposal cannot win, even if its side wins later.
+  if (!user || !w.taker || w.state === "cancelled" ||
+      ![w.maker, w.taker].includes(user) || !q.result || q.result === "void")
+    return undefined;
+  const winner = q.result === w.side ? w.maker : w.taker;
+  return winner === user ? "won" : "lost";
+}

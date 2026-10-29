@@ -28,6 +28,7 @@ export type QuestionDraft = {
 export type MatchAction =
   | "initialize"
   | "create"
+  | "edit"
   | "propose"
   | "match"
   | "cancel"
@@ -334,6 +335,7 @@ export function claimAmount(
 const instructionName: Record<MatchAction, string> = {
   initialize: "initialize_matching",
   create: "create_question",
+  edit: "edit_question",
   propose: "propose_wager",
   match: "match_wager",
   cancel: "cancel_wager",
@@ -349,14 +351,14 @@ export async function prepareMatching(
   input: MatchInput,
 ) {
   if (
-    (await connection.getGenesisHash()) !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+    (await connection.getGenesisHash()) !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
   )
     throw Error("Matching is devnet only");
   const d = deployment(),
     user = new PublicKey(userAddress),
     tx = new Transaction();
   if (
-    ["initialize", "create", "resolve"].includes(action) &&
+    ["initialize", "create", "edit", "resolve"].includes(action) &&
     userAddress !== MATCH_ADMIN
   )
     throw Error("Only the configured Helius admin can do this");
@@ -410,6 +412,24 @@ export async function prepareMatching(
       questionKey,
       (await connection.getAccountInfo(questionKey, "confirmed"))!,
     );
+  }
+  if (action === "edit") {
+    const draft = input.draft;
+    if (!q || q.result || Date.parse(q.resolveBy) <= Date.now())
+      throw Error("Resolved or expired questions cannot be edited");
+    if (!draft || !Number.isFinite(Date.parse(draft.closesAt)) ||
+        !Number.isFinite(Date.parse(draft.resolveBy)) ||
+        Date.parse(draft.closesAt) <= 0 ||
+        Date.parse(draft.resolveBy) <= Date.now() ||
+        Date.parse(draft.resolveBy) <= Date.parse(draft.closesAt))
+      throw Error("Resolve-by must be in the future and after betting closes");
+    if (draft.sideA !== q.sideA || draft.sideB !== q.sideB)
+      throw Error("Outcomes cannot be changed");
+    const close = Math.floor(Date.parse(draft.closesAt) / 1000);
+    const deadline = Math.floor(Date.parse(draft.resolveBy) / 1000);
+    payload = Buffer.concat([text(draft.title.trim(), 200), i64(close), i64(deadline)]);
+    if (draft.title.trim().length < 10) throw Error("Question text is too short");
+    q = { ...q, title: draft.title.trim(), closesAt: new Date(close * 1000).toISOString(), resolveBy: new Date(deadline * 1000).toISOString() };
   }
   if (w) {
     wagerKey = new PublicKey(w.id);

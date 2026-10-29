@@ -1,6 +1,8 @@
 # Matching escrow deployment
 
-The implementation has been built and tested locally. This document is not proof of a devnet upgrade. Existing deployment addresses stay the same; no mainnet action is included.
+The admin slip-edit release (`edit_question`) is deployed to the existing devnet program and its ELF bytes were verified against the tested local build. See [matching-release.json](matching-release.json) for the confirmed signature, slot, and SHA-256. A live edit simulation passed against the existing question with a matched wager; it was not signed or sent. The market is already initialized and `/api/market` reports ready. No account migration or reinitialization is needed.
+
+Admins can now correct question text and both deadlines through “Edit slip,” including after wagers exist. Settled or expired questions remain locked, and outcomes and escrow stay fixed. The production preview was rebuilt and restarted on port 3020. The historical deployment and initialization instructions below are retained for future upgrades; do not rerun initialization.
 
 ## Review
 
@@ -10,7 +12,7 @@ The implementation has been built and tested locally. This document is not proof
 - Upgrade authority / fee payer: `GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG` (existing local CLI wallet).
 - Matching admin: `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8` (configured Helius email wallet).
 - Tokens moved by the upgrade: none. SOL pays program storage and transaction fees.
-- Current compiled program: 522,088 bytes. Devnet RPC estimated 2.65304524 SOL temporary upload-buffer rent and 0.74399648 SOL additional program storage at preparation time, plus network fees. Buffer funds are ordinarily recovered during upgrade; failed uploads may leave a buffer to inspect and close. Recheck balances, rent, binary size/hash, and authority immediately before approval.
+- The previous release was 522,088 bytes. The admin-edit release is 525,432 bytes. The loader requires extensions of at least 10,240 bytes, so this upgrade allocates 532,328 bytes total (0.0520192 SOL additional storage). The temporary upload buffer requires about 2.67003276 SOL, plus network fees. Buffer funds are ordinarily recovered during upgrade; failed uploads may leave a buffer to inspect and close. Recheck balances, rent, binary size/hash, and authority immediately before approval.
 
 ## Build and verify
 
@@ -33,6 +35,7 @@ The web ABI is generated from the built Anchor IDL. Review `programs/token-vault
 After approval, from the repository root, with the existing CLI wallet configured and its public address confirmed as the upgrade authority:
 
 ```sh
+# If storage is insufficient, extend by at least 10,240 bytes; check current size first.
 NO_DNA=1 solana program deploy target/deploy/token_vault.so \
   --program-id AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs \
   --url devnet --use-rpc --with-compute-unit-price 0
@@ -43,6 +46,8 @@ This command signs transactions and spends devnet SOL. Do not run it as a read-o
 After completion, read back ProgramData, compare the deployed ELF bytes to the reviewed local artifact, record the confirmed signature/slot in `ADDRESSES.md`, and restart the built frontend.
 
 ## Initialize the market through Helius
+
+The verified market address is `82Hx58W6e399RCJXSefQfihqKzh82XGZxxotfuB8w4C5`. The market is already initialized and has an existing published question and matched wager. The following steps apply only to a fresh market.
 
 1. Sign in to the app using the admin email wallet above. It needs devnet SOL for fees and rent; do not confuse the CLI upgrade wallet with this embedded wallet.
 2. Click “Review initialization.” The app verifies the backend wallet session, constructs `initialize_matching`, and simulates it on devnet.

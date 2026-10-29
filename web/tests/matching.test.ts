@@ -98,7 +98,7 @@ function fixture() {
   ]);
   let simulateError = false;
   const connection = {
-    getGenesisHash: async () => "EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    getGenesisHash: async () => "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
     getAccountInfo: async (key: PublicKey) =>
       records.get(key.toBase58()) ?? null,
     getMultipleAccountsInfo: async (keys: PublicKey[]) =>
@@ -272,4 +272,35 @@ test("admin-only immutable question content and explicit winner or refund amount
     claimAmount(q, matched, f.taker.toBase58(), Date.parse(q.resolveBy)),
     5123456n,
   );
+});
+
+test("matching preparation rejects mainnet before any transaction simulation", async () => {
+  const f = fixture();
+  f.connection.getGenesisHash = async () => "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+  await assert.rejects(prepareMatching(f.connection, MATCH_ADMIN, "initialize", {}), /devnet only/);
+});
+
+test("admin corrections encode on-chain dates, preserve outcomes and reject expired questions", async () => {
+  const f = fixture();
+  const q = decodeQuestion(f.qkey, f.account(f.qdata));
+  const draft = { ...q, title: "Corrected basketball question?", closesAt: new Date(Date.now() + 180000).toISOString(), resolveBy: new Date(Date.now() + 360000).toISOString() };
+  await assert.rejects(prepareMatching(f.connection, f.maker.toBase58(), "edit", { question: q, draft }), /admin/);
+  await assert.rejects(prepareMatching(f.connection, MATCH_ADMIN, "edit", { question: q, draft: { ...draft, sideA: "Other team" } }), /Outcomes/);
+  for (const dates of [{ closesAt: "invalid" }, { resolveBy: draft.closesAt }, { resolveBy: new Date(0).toISOString() }]) {
+    await assert.rejects(prepareMatching(f.connection, MATCH_ADMIN, "edit", { question: q, draft: { ...draft, ...dates } }), /deadline|future/);
+  }
+  const p = await prepareMatching(f.connection, MATCH_ADMIN, "edit", { question: q, draft });
+  const ix = p.transaction.instructions.at(-1)!;
+  assert.deepEqual([...ix.data.subarray(0, 8)], idl.instructions.find((i) => i.name === "edit_question")!.discriminator);
+  const offset = 8 + 4 + Buffer.byteLength(draft.title);
+  assert.equal(Number(ix.data.readBigInt64LE(offset)), Math.floor(Date.parse(draft.closesAt) / 1000));
+  assert.equal(Number(ix.data.readBigInt64LE(offset + 8)), Math.floor(Date.parse(draft.resolveBy) / 1000));
+  assert.equal(p.question?.title, draft.title);
+  assert.equal(p.question?.sideA, q.sideA);
+  assert.equal(p.stake, "0");
+  assert.equal(ix.keys[0].isSigner, true);
+  assert.equal(ix.keys[1].isWritable, true);
+  // Client input cannot disguise the actual expired chain account.
+  new DataView(f.qdata.buffer, f.qdata.byteOffset + 120, 8).setBigInt64(0, 0n, true);
+  await assert.rejects(prepareMatching(f.connection, MATCH_ADMIN, "edit", { question: q, draft }), /expired/);
 });

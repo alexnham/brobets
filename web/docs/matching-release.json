@@ -4,9 +4,16 @@
   "programData": "JCnkbUMKsQVgoAhiuJ9n9o1kNKUnagNF7rK6FF5EMCQC",
   "upgradeAuthority": "GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG",
   "matchingAdmin": "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
-  "programBytes": 522088,
-  "sha256": "07bb4f7bab506f4f28fb58c55dce7639e745ea44711b5e4b799bec3395c31df9",
-  "deploymentStatus": "not deployed by this implementation",
-  "expectedTemporaryBufferRentSOL": "2.65304524",
-  "expectedAdditionalProgramRentSOL": "0.74399648"
+  "programBytes": 525432,
+  "sha256": "97e5cb10964219681fdcc82fd4d966cc2e21326e79815d68b9531cc39f5144f7",
+  "deploymentStatus": "admin-edit release deployed and byte-for-byte verified on devnet",
+  "expectedTemporaryBufferRentSOL": "2.67003276",
+  "expectedAdditionalProgramRentSOL": "0.0520192",
+  "deploymentSignature": "2antiN5CswHUg1umiZqYBqun7hb6zLYa84go3VBr5mM86VLQTSeRSiZ2jE2ijJk93x7euRGqxt6NG8igZFgoHbP2",
+  "deploymentSlot": 516451876,
+  "remoteBytesMatch": true,
+  "allocatedProgramBytes": 532328,
+  "editSimulation": "passed against existing matched-wager question; not signed or sent",
+  "bufferReclaimed": true,
+  "marketReady": true
 }

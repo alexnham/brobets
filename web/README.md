@@ -20,7 +20,7 @@ For the backend, set `DATABASE_URL` to a PostgreSQL database, then run `npm run 
 
 1. Obtain Helius WaaS access on a paid Helius project. Enable email one-time codes in its WaaS configuration and register your app domain.
 2. Set **server-only** `HELIUS_API_KEY`. Never prefix it with `NEXT_PUBLIC_`. The SDK uses `/api/helius/[...path]` for bootstrap and RPC.
-3. Set `APP_ORIGIN` to the exact browser origin, e.g. `http://localhost:3000` or your deployed HTTPS origin.
+3. Set `APP_ORIGIN` to the exact browser origin, e.g. `http://localhost:3000` or your deployed HTTPS origin. For the local production preview on port 3020, start with `APP_ORIGIN=http://localhost:3020 npm run start -- --port 3020`; using a different origin will correctly reject backend sign-in requests.
 4. The configured admin wallet is **`ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`**, pinned in server-only `ADMIN_WALLET_ADDRESS`. Sign in to that wallet through Helius, then restart the server after any configuration change.
 5. Use “Verify wallet for backend access.” Signing the single-use message establishes a one-day backend session. After matching initialization, the pinned wallet sees “Create question” and can publish on-chain questions. Arbitrary email fields and client roles cannot grant backend access.
 
@@ -42,7 +42,7 @@ The matching program and frontend adapter are implemented. With Helius configure
 
 **The deployed program must be upgraded before new matching instructions can run.** Follow [MATCHING_DEPLOYMENT.md](docs/MATCHING_DEPLOYMENT.md). The app detects readiness by reading and validating the canonical `matching_v1` market account, not by an environment toggle. An uninitialized or old deployment shows a setup notice and no funded proposals. After upgrading, the configured Helius admin signs “Review initialization” once, then publishes questions and resolves results through the UI.
 
-The admin wallet pinned on-chain is `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`; it must also match `ADMIN_WALLET_ADDRESS` on the server. Changing this admin requires a deliberate program upgrade. Question text, outcomes, and deadlines are immutable on-chain. The older pooled-betting instructions and account layouts remain compatible.
+The admin wallet pinned on-chain is `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`; it must also match `ADMIN_WALLET_ADDRESS` on the server. Changing this admin requires a deliberate program upgrade. The `edit_question` upgrade is deployed on devnet. Admins can use “Edit slip” to correct question text and both deadlines through simulation and wallet review, including after wagers exist. Outcomes and stakes stay fixed. Resolved questions and questions whose original resolve-by deadline has passed cannot be edited because refunds may already be available. The resolve-by date must remain in the future and after betting closes. Date inputs use the browser timezone. The older pooled-betting instructions and account layouts remain compatible.
 
 Users propose a side with a positive six-decimal stake; creation immediately deposits that amount. Another wallet matches the entire amount on the opposite side. Matching is atomic and has one taker. Only the proposer can cancel an unmatched wager. After close, the admin declares the winner or voids the question before the resolution deadline. The winner claims exactly both stakes. Voided or expired unresolved questions return each user's own stake independently; unmatched deposits are refundable after cutoff. No platform fee or partial matches.
 
