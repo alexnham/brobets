@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model Challenge {
+  id String @id
+  wallet String
+  message String
+  expiresAt DateTime
+}
+model Session {
+  tokenHash String @id
+  wallet String
+  expiresAt DateTime
+}
+model Question {
+  id String @id @default(cuid())
+  title String
+  sideA String
+  sideB String
+  closesAt DateTime
+  resolveBy DateTime
+  createdAt DateTime @default(now())
+  adminWallet String
+  chainAddress String? @unique
+  transactions TransactionReference[]
+}
+model TransactionReference {
+  signature String @id
+  questionId String
+  question Question @relation(fields: [questionId], references: [id])
+  action String
+  wallet String
+  createdAt DateTime @default(now())
+  // A reference is not proof of escrow funding. Read confirmed chain accounts.
+}

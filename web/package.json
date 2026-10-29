@@ -1,0 +1,43 @@
+{
+  "name": "brobets-web",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "bs58": "^6.0.0",
+    "helius-wallet-kit": "^1.1.1",
+    "lucide-react": "^1.63.0",
+    "next": "^16.4.3",
+    "prisma": "^6.19.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tweetnacl": "^1.0.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "private": true
+}

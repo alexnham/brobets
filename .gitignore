@@ -1,0 +1,12 @@
+/target/
+/.anchor/
+/node_modules/
+
+# Local secrets (keep example configuration)
+.env*
+!.env.example
+
+# Logs and local machine files
+*.log
+.DS_Store
+Thumbs.db
