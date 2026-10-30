@@ -111,6 +111,14 @@ pub mod token_vault {
             resolve_by,
         )
     }
+    pub fn edit_question(
+        ctx: Context<ResolveQuestion>,
+        title: String,
+        closes_at: i64,
+        resolve_by: i64,
+    ) -> Result<()> {
+        matching::edit(ctx, title, closes_at, resolve_by)
+    }
     pub fn propose_wager(
         ctx: Context<ProposeWager>,
         proposal_id: u64,

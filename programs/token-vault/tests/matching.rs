@@ -295,6 +295,51 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             admin: pubkey(user),
             question: q,
         };
+        // Editing works with funded, matched wagers but never changes escrow.
+        let edit = |title: &str, closes_at, resolve_by| instruction::EditQuestion {
+            title: title.into(),
+            closes_at,
+            resolve_by,
+        };
+        assert!(!act(
+            &mut svm,
+            rival,
+            ix(
+                resolve(rival),
+                edit("Corrected basketball question?", close, deadline)
+            )
+        ));
+        assert!(!act(
+            &mut svm,
+            admin,
+            ix(resolve(admin), edit("short", close, deadline))
+        ));
+        assert!(!act(
+            &mut svm,
+            admin,
+            ix(
+                resolve(admin),
+                edit("Corrected basketball question?", deadline, close)
+            )
+        ));
+        assert!(act(
+            &mut svm,
+            admin,
+            ix(
+                resolve(admin),
+                edit("Corrected basketball question?", close + 10, deadline + 10)
+            )
+        ));
+        assert_eq!(balance(&svm, address(e)), 10_246_912);
+        // Restore dates for the existing resolution/refund scenarios.
+        assert!(act(
+            &mut svm,
+            admin,
+            ix(
+                resolve(admin),
+                edit("Who wins the basketball game?", close, deadline)
+            )
+        ));
         assert!(!act(
             &mut svm,
             admin,
@@ -308,6 +353,21 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             rival,
             ix(resolve(rival), instruction::ResolveQuestion { outcome: 1 })
         ));
+        if case == 3 {
+            // Even before expire is called, refunds are available at this boundary.
+            assert!(!act(
+                &mut svm,
+                admin,
+                ix(
+                    resolve(admin),
+                    edit(
+                        "Cannot revive expired question",
+                        deadline + 10,
+                        deadline + 100
+                    )
+                )
+            ));
+        }
         if case == 3 {
             assert!(!act(
                 &mut svm,
@@ -344,6 +404,18 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             &mut svm,
             admin,
             ix(resolve(admin), instruction::ResolveQuestion { outcome: 2 })
+        ));
+        assert!(!act(
+            &mut svm,
+            admin,
+            ix(
+                resolve(admin),
+                edit(
+                    "Cannot change settled question",
+                    deadline + 10,
+                    deadline + 100
+                )
+            )
         ));
         let mut substituted = withdraw(maker, ma);
         substituted.user_token = pubkey(ta);

@@ -50,6 +50,30 @@ pub fn create(
     });
     Ok(())
 }
+// Outcomes stay fixed; an expired question may already have paid refunds.
+pub fn edit(
+    ctx: Context<ResolveQuestion>,
+    title: String,
+    closes_at: i64,
+    resolve_by: i64,
+) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let q = &mut ctx.accounts.question;
+    require!(q.outcome == 0, VaultError::AlreadyResolved);
+    require!(now < q.resolve_by, VaultError::InvalidResolutionTime);
+    require!(
+        (10..=200).contains(&title.len()) && !title.trim().is_empty(),
+        VaultError::InvalidQuestion
+    );
+    require!(
+        closes_at > 0 && resolve_by > now && resolve_by > closes_at,
+        VaultError::InvalidDeadline
+    );
+    q.title = title;
+    q.closes_at = closes_at;
+    q.resolve_by = resolve_by;
+    Ok(())
+}
 pub fn propose(ctx: Context<ProposeWager>, proposal_id: u64, side: u8, amount: u64) -> Result<()> {
     require!(side == 1 || side == 2, VaultError::InvalidSide);
     require!(amount > 0 && amount <= u64::MAX / 2, VaultError::Overflow);

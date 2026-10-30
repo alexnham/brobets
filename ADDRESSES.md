@@ -101,3 +101,26 @@ Update this registry after authority changes, new deployments, metadata creation
 - Update authority: `GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG`
 - Mutable: yes; royalties: zero.
 - Status: metadata account exists on devnet and its owner, mint, name, symbol, URI, mutability, zero royalties, and update authority have been verified. Creation transaction signature is not recorded.
+
+## Matched-wager upgrade — October 29, 2026
+
+The additive matching release was deployed to the existing devnet program and its ProgramData ELF bytes were verified against the reviewed local SHA-256.
+
+- Program: `AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs`
+- Upgrade signature: [`59XgpydE7FqG96NfwirtjetzJFgJ94tSPomRRgYow3ZAbdjHHTBRrHdhkgEV5hTqc7qaATwuKFH1qKiRduiRgaKR`](https://explorer.solana.com/tx/59XgpydE7FqG96NfwirtjetzJFgJ94tSPomRRgYow3ZAbdjHHTBRrHdhkgEV5hTqc7qaATwuKFH1qKiRduiRgaKR?cluster=devnet)
+- Confirmed upgrade slot: `516302854`
+- Compiled ELF SHA-256: `07bb4f7bab506f4f28fb58c55dce7639e745ea44711b5e4b799bec3395c31df9`
+- Matching admin: `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8`
+
+The `matching_v1` market still requires a one-time `initialize_matching` signature from the Helius admin wallet. Program deployment does not create questions or fund wagers.
+
+## Admin slip-edit upgrade — October 29, 2026
+
+- Existing devnet program upgraded: `AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs`.
+- Upgrade signature: [`2antiN5CswHUg1umiZqYBqun7hb6zLYa84go3VBr5mM86VLQTSeRSiZ2jE2ijJk93x7euRGqxt6NG8igZFgoHbP2`](https://explorer.solana.com/tx/2antiN5CswHUg1umiZqYBqun7hb6zLYa84go3VBr5mM86VLQTSeRSiZ2jE2ijJk93x7euRGqxt6NG8igZFgoHbP2?cluster=devnet).
+- Confirmed slot: `516451876`.
+- ELF SHA-256: `97e5cb10964219681fdcc82fd4d966cc2e21326e79815d68b9531cc39f5144f7`; deployed ELF verified byte for byte.
+- ELF size: 525,432 bytes; allocated capacity: 532,328 bytes after the loader's minimum 10,240-byte extension.
+- Existing market is initialized and ready, with one question and one matched wager. No reinitialization performed.
+- Live `edit_question` simulation passed for the existing matched-wager question; no question dates or text were changed during verification.
+- Temporary upload buffer reclaimed by the upgrade.
