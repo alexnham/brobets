@@ -45,6 +45,12 @@ Private collateral is a note owned by a shielded keypair, not by the token-vault
 
 Refunds are feasible in principle (the vault can pay any Ring address or exit to a public account) but depend on that same key.
 
+### Decision (2026-11-16): keep the reserve public
+
+Collateral stays in the existing token-vault program reserve, and the program keeps sole control of BB minting. Private USDC exits the Ring into the reserve at purchase and returns to the Ring at redemption. Backing stays verifiable on-chain. The accepted cost is that each purchase and redemption shows a public reserve movement equal to the BB change, so privacy covers the funding source and withdrawal destination, not amounts.
+
+This changes the flow from the one tested above, which kept collateral as a private vault note. Untested under this decision: an anonymous exit paired with the program's `buy` in one transaction (today `buy` requires the buyer to sign as authority of a public USDC account), and `sell` proceeds re-entering the Ring without the betting wallet signing a linkable deposit.
+
 ## Go / no-go
 
 | Requirement | Status |
@@ -58,4 +64,4 @@ Refunds are feasible in principle (the vault can pay any Ring address or exit to
 | Player holds zero SOL throughout | Unproven |
 | External sender without connecting | Unproven, needs a public intermediate hop |
 | Embedded key recovery and delegated viewing | Unproven |
-| On-chain enforced collateral | No with current devnet settings |
+| On-chain enforced collateral | Decided: public program reserve; exit + `buy` flow untested |
