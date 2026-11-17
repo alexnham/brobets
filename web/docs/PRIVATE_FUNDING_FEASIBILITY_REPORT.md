@@ -49,13 +49,13 @@ Refunds are feasible in principle (the vault can pay any Ring address or exit to
 
 Collateral stays in the existing token-vault program reserve, and the program keeps sole control of BB minting. Private USDC exits the Ring into the reserve at purchase and returns to the Ring at redemption. Backing stays verifiable on-chain. The accepted cost is that each purchase and redemption shows a public reserve movement equal to the BB change, so privacy covers the funding source and withdrawal destination, not amounts.
 
-**Tested locally under this decision:** `brobets_public_reserve_buys_and_redeems_from_private_usdc` (same file). Raw SPL instructions stand in for token-vault `buy` and `sell`; the real program was not loaded.
+**Tested locally under this decision:** `brobets_public_reserve_buys_and_redeems_from_private_usdc` (same file). It loads the real token-vault program (`target/deploy/token_vault.so`, built 2026-11-16 from a working tree with uncommitted `matching.rs` edits; `buy`/`sell` are unchanged), runs `initialize`, and calls the real `buy` and `sell`. Two test-only shortcuts: the program is written into the validator with a surfpool cheatcode rather than deployed, and the suite's USDC mint is patched from 9 to 6 decimals because the vault requires 6.
 
 | Step | Result |
 | --- | --- |
-| Purchase | One transaction: the hidden player exits 11 USDC to the betting wallet's token account, the betting wallet pays 10 to the reserve and 1 to the treasury, and 10 BB is minted. The Ring instruction names neither player nor funder. |
+| Purchase | One transaction: the hidden player exits 11 USDC to the betting wallet's token account, the betting wallet calls `buy` for 10 (USDC to the program reserve, 10 BB minted by the vault) and transfers 1 premium to the treasury. The Ring instruction names neither player nor funder. |
 | Atomicity | The same proof with a failing BB instruction is rejected and the state tree is unchanged. |
-| Redemption | Two transactions: the betting wallet burns 4 BB and receives 4 USDC from the reserve, then deposits it to the player's hidden identity. |
+| Redemption | Two transactions: the betting wallet calls `sell` for 4 (BB burned, USDC paid from the reserve), then deposits it to the player's hidden identity. |
 | Zero SOL | The betting wallet's system account never exists. A sponsor pays every fee, including the Ring deposit, and pre-creates its token accounts. |
 
 Consequences:
@@ -63,7 +63,9 @@ Consequences:
 - The purchase publicly shows Ring -> betting wallet -> reserve for the exact amount. The betting wallet is linked to the Ring, though not to the funder or the player's Ring identity.
 - Redeemed USDC is public in the betting wallet's account until it is deposited, and that deposit publicly names the betting wallet's token account and amount. It lands under the player's hidden identity, so later private transfers and the final withdrawal are not linked to it on-chain.
 - The betting wallet signs the purchase and the deposit, so the embedded wallet must sign; it does not need SOL.
-- Not tested: the real `buy`/`sell` instructions beside a Ring transact (compute and transaction-size fit), the redemption deposit in the same transaction as `sell`, and a relayer rather than a direct sponsor paying.
+- The Ring transact, `buy` and the premium transfer fit one transaction under the suite's default compute limit; compute units and bytes were not measured.
+- `buy` has no premium leg, so the premium is a separate transfer the client must add; nothing on-chain enforces it.
+- Not tested: the redemption deposit in the same transaction as `sell`, and a relayer rather than a direct sponsor paying.
 
 ## Go / no-go
 
@@ -78,4 +80,4 @@ Consequences:
 | Player holds zero SOL throughout | Go (local) with a direct sponsor; relayer path untested |
 | External sender without connecting | Unproven, needs a public intermediate hop |
 | Embedded key recovery and delegated viewing | Unproven |
-| On-chain enforced collateral | Go (local, SPL stand-in for `buy`/`sell`); real program untested |
+| On-chain enforced collateral | Go (local, real token-vault `buy`/`sell`) |

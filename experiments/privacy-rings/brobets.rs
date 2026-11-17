@@ -214,8 +214,28 @@ fn brobets_private_usdc_buys_redeems_and_withdraws() -> Result<()> {
     Ok(())
 }
 
-/// Custody decision 2026-11-16: the reserve stays public. Raw SPL instructions stand in for
-/// token-vault `buy` (user USDC -> reserve, mint BB) and `sell` (burn BB, reserve -> user USDC).
+const VAULT_PROGRAM: &str = "AVnHeHrsjCdY55sygvLMmehrZHLBZknEZL1BnEPP5tKs";
+const VAULT_SO: &str = "/Users/alexnham/Documents/ChatGPT/Brobets/target/deploy/token_vault.so";
+// Anchor discriminators, sha256("global:<name>")[..8].
+const INITIALIZE: [u8; 8] = [175, 175, 109, 31, 13, 152, 155, 237];
+const BUY: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
+const SELL: [u8; 8] = [51, 230, 133, 164, 1, 127, 131, 173];
+
+/// The suite has no hook to load another program at genesis, surfpool writes it directly.
+fn set_account(env: &TestEnv, address: Address, fields: serde_json::Value) -> Result<()> {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "surfnet_setAccount",
+        "params": [address.to_string(), fields],
+    });
+    let reply: serde_json::Value = env.client.block_on(async {
+        anyhow::Ok(reqwest::Client::new().post(&env.rpc_url).json(&request).send().await?.json().await?)
+    })?;
+    ensure!(reply.get("error").is_none(), "surfnet_setAccount refused {reply}");
+    Ok(())
+}
+
+/// Custody decision 2026-11-16: the reserve stays public. The real token-vault program
+/// (`VAULT_SO`, built from the Brobets repo) runs `buy` and `sell` beside the Ring transact.
 /// The betting wallet holds zero SOL throughout, the test payer sponsors every fee.
 #[test]
 fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
@@ -241,6 +261,42 @@ fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
     .send()?;
     let usdc = env.usdc_mint;
     let payer = env.payer.pubkey();
+    let vault_program: Address = VAULT_PROGRAM.parse()?;
+    let program = std::fs::read(std::env::var("BROBETS_VAULT_SO").unwrap_or(VAULT_SO.into()))?;
+    set_account(
+        &env,
+        vault_program,
+        serde_json::json!({
+            "lamports": rpc.get_minimum_balance_for_rent_exemption(program.len())?,
+            "owner": "BPFLoader2111111111111111111111111111111111",
+            "executable": true,
+            "data": hex::encode(&program),
+        }),
+    )?;
+    // The vault demands a 6-decimal quote mint, the suite's USDC mint is created with 9.
+    let mut mint = fetch_account(rpc, &usdc)?.data;
+    mint[44] = 6;
+    set_account(&env, usdc, serde_json::json!({ "data": hex::encode(&mint) }))?;
+    let vault = Address::find_program_address(&[b"vault", usdc.as_ref()], &vault_program).0;
+    let bb = Address::find_program_address(&[b"token", vault.as_ref()], &vault_program).0;
+    let reserve = Address::find_program_address(&[b"reserve", vault.as_ref()], &vault_program).0;
+    send(
+        rpc,
+        &env.payer,
+        &[Instruction {
+            program_id: vault_program,
+            accounts: vec![
+                AccountMeta::new(payer, true),
+                AccountMeta::new_readonly(usdc, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new(bb, false),
+                AccountMeta::new(reserve, false),
+                AccountMeta::new_readonly(pda::spl_token_program_id(), false),
+                AccountMeta::new_readonly(Address::default(), false),
+            ],
+            data: INITIALIZE.to_vec(),
+        }],
+    )?;
     let token = |owner: Address, mint: Address| create_token_account(rpc, &env.payer, &mint, &owner);
     let balance = |account: Address| -> Result<u64> { Ok(token_amount(&fetch_account(rpc, &account)?)) };
     let deposit = |from: &Keypair, user_token: Address, amount: u64| -> Result<Utxo> {
@@ -282,7 +338,6 @@ fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
 
     // 2. Purchase in one transaction: the hidden player exits collateral + premium to the
     //    betting wallet, which pays the public reserve and treasury and receives BB.
-    let bb = create_mint(rpc, &env.payer)?;
     let bettor = Keypair::new();
     let (_, bettor_usdc) = spr_test_utils::wallet::create_associated_token_account(
         rpc,
@@ -291,7 +346,20 @@ fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
         &usdc,
     )?;
     let bettor_bb = token(bettor.pubkey(), bb)?;
-    let reserve = token(payer, usdc)?;
+    let trade = |tag: [u8; 8], amount: u64| Instruction {
+        program_id: vault_program,
+        accounts: vec![
+            AccountMeta::new_readonly(bettor.pubkey(), true),
+            AccountMeta::new_readonly(vault, false),
+            AccountMeta::new_readonly(usdc, false),
+            AccountMeta::new(bb, false),
+            AccountMeta::new(reserve, false),
+            AccountMeta::new(bettor_usdc, false),
+            AccountMeta::new(bettor_bb, false),
+            AccountMeta::new_readonly(pda::spl_token_program_id(), false),
+        ],
+        data: [tag.as_slice(), &amount.to_le_bytes()].concat(),
+    };
     let treasury = token(payer, usdc)?;
     let mut exit = ConfidentialTransaction::new_with_ring(
         vec![indexed_note(funded, player, &env, env.tree)?],
@@ -320,9 +388,8 @@ fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
     };
     let bought = sponsored.send(&[
         transact,
-        token_ix(3, COLLATERAL, bettor_usdc, reserve, bettor.pubkey()),
+        trade(BUY, COLLATERAL),
         token_ix(3, PREMIUM, bettor_usdc, treasury, bettor.pubkey()),
-        token_ix(7, COLLATERAL, bb, bettor_bb, payer),
     ])?;
     println!("BROBETS reserve purchase {bought}");
     wait_for_indexed_transaction(env.client.indexer(), auditor_tag, bought);
@@ -338,10 +405,7 @@ fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
         payer: &env.payer,
         holder: &bettor,
     };
-    let sold = sponsored.send(&[
-        token_ix(8, REDEEM, bettor_bb, bb, bettor.pubkey()),
-        token_ix(3, REDEEM, reserve, bettor_usdc, payer),
-    ])?;
+    let sold = sponsored.send(&[trade(SELL, REDEEM)])?;
     println!("BROBETS reserve sale {sold}");
     deposit(&bettor, bettor_usdc, REDEEM)?;
     assert_eq!(
