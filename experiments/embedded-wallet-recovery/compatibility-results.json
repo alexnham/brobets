@@ -1,0 +1,9 @@
+{
+  "walletKit": "1.1.1",
+  "turnkeyReactWalletKit": "1.11.1",
+  "turnkeyCore": "1.14.1",
+  "walletHookSha256": "7b371ffbff1df616344ebc52f5e9e1f7e4beab7527942faf85aef8fe7988e025",
+  "turnkeyCoreSha256": "0e19bdf4a62e9babd6a0deecb1e2c4ef331c580522731f7836005439489fde13",
+  "result": "Installed Helius signMessage uses UTF-8 text; cannot sign the canonical binary derivation envelope unchanged.",
+  "liveRecoveryTested": false
+}
