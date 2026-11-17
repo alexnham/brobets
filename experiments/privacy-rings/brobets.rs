@@ -4,6 +4,7 @@
 
 use solana_instruction::AccountMeta;
 use spr_test_utils::spl::create_mint;
+use zolana_ring_keys::ListSaltHolder;
 
 use super::*;
 
@@ -210,5 +211,146 @@ fn brobets_private_usdc_buys_redeems_and_withdraws() -> Result<()> {
         usdc_notes(&wallet(player)?),
         [REDEEM - WITHDRAW, FUND - COLLATERAL - PREMIUM]
     );
+    Ok(())
+}
+
+/// Custody decision 2026-11-16: the reserve stays public. Raw SPL instructions stand in for
+/// token-vault `buy` (user USDC -> reserve, mint BB) and `sell` (burn BB, reserve -> user USDC).
+/// The betting wallet holds zero SOL throughout, the test payer sponsors every fee.
+#[test]
+fn brobets_public_reserve_buys_and_redeems_from_private_usdc() -> Result<()> {
+    let env = setup()?;
+    let rpc = env.client.rpc();
+    let ring_program = custom_ring_program_id()?;
+    let ring = CustomRing::new(ring_program);
+    let auditor = X25519Keypair::new();
+    let auditor_tag = auditor_view_tag(&auditor.pubkey());
+    RegisterRing {
+        ring,
+        payer: &env.payer,
+        auditor_pubkey: auditor.pubkey(),
+        tier: Tier::AnonymousAuditOnly,
+    }
+    .send(&env.client)?;
+    let player = &env.sender.keypair;
+    EnrollOwners {
+        ring,
+        owners: &[player, &env.recipient.keypair],
+        env: &env,
+    }
+    .send()?;
+    let usdc = env.usdc_mint;
+    let payer = env.payer.pubkey();
+    let token = |owner: Address, mint: Address| create_token_account(rpc, &env.payer, &mint, &owner);
+    let balance = |account: Address| -> Result<u64> { Ok(token_amount(&fetch_account(rpc, &account)?)) };
+    let deposit = |from: &Keypair, user_token: Address, amount: u64| -> Result<Utxo> {
+        let deposit = RingDeposit {
+            ring,
+            payer: from,
+            recipient: DepositRecipient::Anonymous { keys: player },
+            tree: env.tree,
+            asset: DepositAsset::Spl(DepositSplAccounts {
+                mint: usdc,
+                user_token,
+                token_program: pda::spl_token_program_id(),
+            }),
+            amount,
+            cosigner: None,
+            list_salt: player.list_salt(&ring_program).ok(),
+        };
+        let RingDepositReceipt { signature, utxo } =
+            env.run(deposit.send_with_fee_payer(env.client.ring_client(), &env.payer))?;
+        custom_ring_cli::wait_for_indexed_transaction(&env.client, signature)?;
+        Ok(utxo)
+    };
+    let exit_accounts = |user_token_account| {
+        vec![TransactInterfaceTransferAccounts::SplWithdrawal(
+            TransactSplWithdrawalAccounts {
+                mint: usdc,
+                spl_interface: pda::spl_interface(&usdc),
+                user_token_account,
+                token_program: pda::spl_token_program_id(),
+            },
+        )]
+    };
+
+    // 1. Public ingress, as before.
+    let funder = Keypair::new();
+    let funder_usdc = token(funder.pubkey(), usdc)?;
+    mint_to(rpc, &env.payer, &usdc, &funder_usdc, FUND)?;
+    let funded = deposit(&funder, funder_usdc, FUND)?;
+
+    // 2. Purchase in one transaction: the hidden player exits collateral + premium to the
+    //    betting wallet, which pays the public reserve and treasury and receives BB.
+    let bb = create_mint(rpc, &env.payer)?;
+    let bettor = Keypair::new();
+    let (_, bettor_usdc) = spr_test_utils::wallet::create_associated_token_account(
+        rpc,
+        &env.payer,
+        &bettor.pubkey(),
+        &usdc,
+    )?;
+    let bettor_bb = token(bettor.pubkey(), bb)?;
+    let reserve = token(payer, usdc)?;
+    let treasury = token(payer, usdc)?;
+    let mut exit = ConfidentialTransaction::new_with_ring(
+        vec![indexed_note(funded, player, &env, env.tree)?],
+        payer,
+        ring_program,
+    )?;
+    exit.withdraw(usdc, COLLATERAL + PREMIUM, bettor_usdc)?;
+    let transact = env
+        .run(anonymous(ring, player, exit, exit_accounts(bettor_usdc)).prove(env.client.ring_client()))?
+        .instruction()?;
+    assert!(
+        transact.accounts.iter().all(|meta| meta.pubkey != player.pubkey() && meta.pubkey != funder.pubkey()),
+        "the purchase names neither the player nor the funder"
+    );
+    let tree_before = fetch_account(rpc, &env.tree)?;
+    ExpectRejection {
+        payer: &env.payer,
+        instructions: &[transact.clone(), token_ix(7, COLLATERAL, usdc, bettor_bb, payer)],
+    }
+    .send(rpc)?;
+    assert_account_unchanged(rpc, &env.tree, &tree_before)?;
+    let sponsored = SendAs {
+        rpc,
+        payer: &env.payer,
+        holder: &bettor,
+    };
+    let bought = sponsored.send(&[
+        transact,
+        token_ix(3, COLLATERAL, bettor_usdc, reserve, bettor.pubkey()),
+        token_ix(3, PREMIUM, bettor_usdc, treasury, bettor.pubkey()),
+        token_ix(7, COLLATERAL, bb, bettor_bb, payer),
+    ])?;
+    println!("BROBETS reserve purchase {bought}");
+    wait_for_indexed_transaction(env.client.indexer(), auditor_tag, bought);
+    assert_eq!(
+        (balance(reserve)?, balance(treasury)?, balance(bettor_bb)?, balance(bettor_usdc)?),
+        (COLLATERAL, PREMIUM, COLLATERAL, 0)
+    );
+
+    // 3. Redemption: sell is public, then the betting wallet deposits the proceeds to the
+    //    hidden player in a second transaction. That deposit names the betting wallet's account.
+    let sponsored = SendAs {
+        rpc,
+        payer: &env.payer,
+        holder: &bettor,
+    };
+    let sold = sponsored.send(&[
+        token_ix(8, REDEEM, bettor_bb, bb, bettor.pubkey()),
+        token_ix(3, REDEEM, reserve, bettor_usdc, payer),
+    ])?;
+    println!("BROBETS reserve sale {sold}");
+    deposit(&bettor, bettor_usdc, REDEEM)?;
+    assert_eq!(
+        (balance(reserve)?, balance(bettor_bb)?, balance(bettor_usdc)?),
+        (COLLATERAL - REDEEM, COLLATERAL - REDEEM, 0)
+    );
+    assert!(rpc.get_account(bettor.pubkey())?.is_none(), "the betting wallet never held SOL");
+    let mut wallet = RingWallet::new(player, env.ring_assets()?, ring_program);
+    wallet.sync(&env)?;
+    assert_eq!(usdc_notes(&wallet), [REDEEM, FUND - COLLATERAL - PREMIUM]);
     Ok(())
 }

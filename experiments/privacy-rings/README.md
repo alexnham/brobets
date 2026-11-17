@@ -27,6 +27,7 @@ No transactions signed, simulated, or sent; no wallets created; no new Ring depl
   - upstream `an_anonymous_ring_hides_owners_and_preserves_auditor_access`
   - upstream `usdc_crosses_the_ring_boundary_and_withdraws_through_a_ring_transact`
   - ours, `brobets_private_usdc_buys_redeems_and_withdraws` (`brobets.rs` here)
+  - ours, `brobets_public_reserve_buys_and_redeems_from_private_usdc` (same file, matches the custody decision)
 - Results and go/no-go: `web/docs/PRIVATE_FUNDING_FEASIBILITY_REPORT.md`.
 
 To rerun ours: copy `brobets.rs` to `program-tests/custom-ring/tests/ring/` in the clone, add `#[path = "ring/brobets.rs"] mod brobets;` to `program-tests/custom-ring/tests/ring.rs`, then

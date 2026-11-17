@@ -49,7 +49,21 @@ Refunds are feasible in principle (the vault can pay any Ring address or exit to
 
 Collateral stays in the existing token-vault program reserve, and the program keeps sole control of BB minting. Private USDC exits the Ring into the reserve at purchase and returns to the Ring at redemption. Backing stays verifiable on-chain. The accepted cost is that each purchase and redemption shows a public reserve movement equal to the BB change, so privacy covers the funding source and withdrawal destination, not amounts.
 
-This changes the flow from the one tested above, which kept collateral as a private vault note. Untested under this decision: an anonymous exit paired with the program's `buy` in one transaction (today `buy` requires the buyer to sign as authority of a public USDC account), and `sell` proceeds re-entering the Ring without the betting wallet signing a linkable deposit.
+**Tested locally under this decision:** `brobets_public_reserve_buys_and_redeems_from_private_usdc` (same file). Raw SPL instructions stand in for token-vault `buy` and `sell`; the real program was not loaded.
+
+| Step | Result |
+| --- | --- |
+| Purchase | One transaction: the hidden player exits 11 USDC to the betting wallet's token account, the betting wallet pays 10 to the reserve and 1 to the treasury, and 10 BB is minted. The Ring instruction names neither player nor funder. |
+| Atomicity | The same proof with a failing BB instruction is rejected and the state tree is unchanged. |
+| Redemption | Two transactions: the betting wallet burns 4 BB and receives 4 USDC from the reserve, then deposits it to the player's hidden identity. |
+| Zero SOL | The betting wallet's system account never exists. A sponsor pays every fee, including the Ring deposit, and pre-creates its token accounts. |
+
+Consequences:
+
+- The purchase publicly shows Ring -> betting wallet -> reserve for the exact amount. The betting wallet is linked to the Ring, though not to the funder or the player's Ring identity.
+- Redeemed USDC is public in the betting wallet's account until it is deposited, and that deposit publicly names the betting wallet's token account and amount. It lands under the player's hidden identity, so later private transfers and the final withdrawal are not linked to it on-chain.
+- The betting wallet signs the purchase and the deposit, so the embedded wallet must sign; it does not need SOL.
+- Not tested: the real `buy`/`sell` instructions beside a Ring transact (compute and transaction-size fit), the redemption deposit in the same transaction as `sell`, and a relayer rather than a direct sponsor paying.
 
 ## Go / no-go
 
@@ -61,7 +75,7 @@ This changes the flow from the one tested above, which kept collateral as a priv
 | Private redemption credit | Go (local) |
 | Public withdrawal | Go (local), ATA or PDA only |
 | Hosted devnet Ring, indexer, prover, relay | Blocked, needs own deployment or Helius |
-| Player holds zero SOL throughout | Unproven |
+| Player holds zero SOL throughout | Go (local) with a direct sponsor; relayer path untested |
 | External sender without connecting | Unproven, needs a public intermediate hop |
 | Embedded key recovery and delegated viewing | Unproven |
-| On-chain enforced collateral | Decided: public program reserve; exit + `buy` flow untested |
+| On-chain enforced collateral | Go (local, SPL stand-in for `buy`/`sell`); real program untested |
