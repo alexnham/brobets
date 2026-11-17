@@ -13,7 +13,7 @@ An Anchor 1.1.2 program that creates a new SPL token redeemable at **1 token = 1
 
 The program supports the original SPL Token program only. Token-2022 extensions, transfer fees, and hooks are excluded. `anchor-spl`'s Token-2022 feature is compiled because Anchor's account initialization macros require it; the account types still enforce the original token program.
 
-There are no trading fees, price updates, admin withdrawals, or external minting paths. Users pay Solana transaction fees and any account rent separately. Token transfers and direct burns are possible through SPL Token; direct burns or USDC donations leave surplus reserves that cannot be withdrawn through this program.
+Buying charges a 10% fee that goes to the treasury; redemption has no fee. There are no price updates, admin withdrawals, or external minting paths. Users pay Solana transaction fees and any account rent separately, unless the web app's optional sponsor pays them (see `web/README.md`). Token transfers and direct burns are possible through SPL Token; direct burns or USDC donations leave surplus reserves that cannot be withdrawn through this program.
 
 ## Account derivation and integration
 
