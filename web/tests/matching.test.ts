@@ -4,6 +4,8 @@ import {
   Connection,
   PublicKey,
   Keypair,
+  SystemProgram,
+  Transaction,
   type AccountInfo,
   type VersionedTransaction,
 } from "@solana/web3.js";
@@ -12,6 +14,7 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import idl from "../lib/matching-idl.json";
+import { sponsorSign } from "../lib/sponsor";
 import {
   deployment,
   u64,
@@ -27,7 +30,8 @@ function fixture() {
   process.env.NEXT_PUBLIC_USDC_MINT =
     "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
   const d = deployment(),
-    maker = Keypair.generate().publicKey,
+    makerKey = Keypair.generate(),
+    maker = makerKey.publicKey,
     taker = Keypair.generate().publicKey;
   const disc = (name: string) =>
     Buffer.from(idl.accounts.find((a) => a.name === name)!.discriminator);
@@ -128,6 +132,7 @@ function fixture() {
   } as unknown as Connection;
   return {
     d,
+    makerKey,
     maker,
     taker,
     qkey,
@@ -303,4 +308,81 @@ test("admin corrections encode on-chain dates, preserve outcomes and reject expi
   // Client input cannot disguise the actual expired chain account.
   new DataView(f.qdata.buffer, f.qdata.byteOffset + 120, 8).setBigInt64(0, 0n, true);
   await assert.rejects(prepareMatching(f.connection, MATCH_ADMIN, "edit", { question: q, draft }), /expired/);
+});
+test("sponsor pays fee and rent only for the session player's exact wager action", async () => {
+  const f = fixture(),
+    q = decodeQuestion(f.qkey, f.account(f.qdata)),
+    w = decodeWager(f.wkey, f.account(f.wdata)),
+    sponsor = Keypair.generate(),
+    address = sponsor.publicKey.toBase58();
+  const sign = (tx: Transaction, user = f.maker, signer = f.makerKey) => {
+    tx.partialSign(signer);
+    return sponsorSign(
+      tx.serialize({ requireAllSignatures: false }),
+      sponsor,
+      user,
+    );
+  };
+  const propose = () =>
+    prepareMatching(
+      f.connection,
+      f.maker.toBase58(),
+      "propose",
+      { question: q, side: "a", amount: "5" },
+      address,
+    );
+  const p = await propose();
+  assert.equal(p.sponsored, true);
+  assert.equal(p.transaction.feePayer!.toBase58(), address);
+  assert.equal(p.transaction.instructions[0].keys[0].pubkey.toBase58(), address);
+  const message = p.transaction.serializeMessage();
+  const out = Transaction.from(sign(p.transaction));
+  assert.ok(out.serializeMessage().equals(message));
+  assert.ok(out.verifySignatures());
+  // Cancel also creates the maker's missing token account at the sponsor's cost.
+  const c = await prepareMatching(
+    f.connection,
+    f.maker.toBase58(),
+    "cancel",
+    { question: q, wager: w },
+    address,
+  );
+  assert.equal(c.transaction.instructions.length, 2);
+  assert.ok(Transaction.from(sign(c.transaction)).verifySignatures());
+  // Without a sponsor, and for admin actions, the user stays the payer.
+  const own = await prepareMatching(f.connection, f.maker.toBase58(), "propose", {
+    question: q,
+    side: "a",
+    amount: "5",
+  });
+  assert.equal(own.sponsored, false);
+  assert.throws(() => sign(own.transaction), /fee payer/);
+  const draft = { title: "Who wins this basketball game?", sideA: "A", sideB: "B", closesAt: new Date(Date.now() + 3600e3).toISOString(), resolveBy: new Date(Date.now() + 7200e3).toISOString() };
+  const admin = await prepareMatching(f.connection, MATCH_ADMIN, "create", { draft }, address);
+  assert.equal(admin.sponsored, false);
+  // Another session's player, a missing player signature, and a tampered message are refused.
+  assert.throws(() => sign(p.transaction, f.taker), /account maker/);
+  const unsigned = (await propose()).transaction;
+  assert.throws(
+    () => sponsorSign(unsigned.serialize({ requireAllSignatures: false }), sponsor, f.maker),
+    /user signature/,
+  );
+  // The sponsor never signs anything that could move its SOL elsewhere.
+  const drain = (await propose()).transaction;
+  drain.instructions.unshift(
+    SystemProgram.transfer({ fromPubkey: sponsor.publicKey, toPubkey: f.maker, lamports: 1 }),
+  );
+  assert.throws(() => sign(drain), /token account creation/);
+  const extra = (await propose()).transaction;
+  extra.add(extra.instructions[0], extra.instructions[0]);
+  assert.throws(() => sign(extra), /instruction count/);
+  const slot = (await propose()).transaction;
+  slot.instructions[0].keys[6].pubkey = sponsor.publicKey;
+  assert.throws(() => sign(slot), /account maker_token/);
+  const third = (await propose()).transaction;
+  third.instructions[0].keys[3].isSigner = true;
+  assert.throws(() => sign(third), /signers/);
+  const foreign = (await propose()).transaction;
+  foreign.instructions[0].programId = SystemProgram.programId;
+  assert.throws(() => sign(foreign), /instruction/);
 });

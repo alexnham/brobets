@@ -257,14 +257,16 @@ pub struct CreateQuestion<'info> {
 #[derive(Accounts)]
 #[instruction(proposal_id: u64)]
 pub struct ProposeWager<'info> {
+    // Rent payer only: it gains no authority over the wager. The maker alone authorizes the stake.
     #[account(mut)]
+    pub payer: Signer<'info>,
     pub maker: Signer<'info>,
     #[account(seeds = [b"question_v1", &question.question_id.to_le_bytes()], bump = question.bump, has_one = token_mint)]
     pub question: Account<'info, MatchQuestion>,
     pub token_mint: Account<'info, Mint>,
-    #[account(init, payer = maker, space = 8 + MatchedWager::INIT_SPACE, seeds = [b"wager_v1", question.key().as_ref(), maker.key().as_ref(), &proposal_id.to_le_bytes()], bump)]
+    #[account(init, payer = payer, space = 8 + MatchedWager::INIT_SPACE, seeds = [b"wager_v1", question.key().as_ref(), maker.key().as_ref(), &proposal_id.to_le_bytes()], bump)]
     pub wager: Account<'info, MatchedWager>,
-    #[account(init, payer = maker, seeds = [b"wager_escrow_v1", wager.key().as_ref()], bump, token::mint = token_mint, token::authority = wager)]
+    #[account(init, payer = payer, seeds = [b"wager_escrow_v1", wager.key().as_ref()], bump, token::mint = token_mint, token::authority = wager)]
     pub escrow: Account<'info, TokenAccount>,
     #[account(mut, token::mint = token_mint, token::authority = maker)]
     pub maker_token: Account<'info, TokenAccount>,

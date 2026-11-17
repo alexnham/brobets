@@ -60,8 +60,13 @@ export async function POST(request: Request) {
     const keys = message.getAccountKeys({
       accountKeysFromLookups: result.meta.loadedAddresses,
     });
-    if (keys.get(0)?.toBase58() !== actor.wallet)
-      throw Error("Transaction fee payer does not match session");
+    // The session wallet must have signed; the fee payer may be the sponsor instead.
+    const signers = message.staticAccountKeys.slice(
+      0,
+      message.header.numRequiredSignatures,
+    );
+    if (!signers.some((k) => k.toBase58() === actor.wallet))
+      throw Error("Transaction is not signed by the session wallet");
     const abi = idl.instructions.find((i) => i.name === names[input.action])!;
     const questionIndex = abi.accounts.findIndex((a) => a.name === "question");
     const instruction = message.compiledInstructions.find(
