@@ -1,0 +1,41 @@
+{
+  "cluster": "devnet",
+  "readOnly": true,
+  "credentials": "existing server config, not copied or printed",
+  "checks": [
+    {
+      "check": "devnet-rpc",
+      "http": 200,
+      "devnet": true
+    },
+    {
+      "check": "privacy-program",
+      "http": 200,
+      "exists": true,
+      "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+      "executable": true
+    },
+    {
+      "check": "user-registry",
+      "http": 200,
+      "exists": true,
+      "owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+      "executable": true
+    },
+    {
+      "check": "state-tree",
+      "http": 200,
+      "exists": true,
+      "owner": "ring1GaLCuJnkUMVkX2JeZLTTX17wKsV4fZmPVzXANW",
+      "executable": false
+    },
+    {
+      "check": "privacy-indexer",
+      "http": 200,
+      "resultKeys": [
+        "context",
+        "records"
+      ]
+    }
+  ]
+}
