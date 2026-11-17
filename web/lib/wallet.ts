@@ -44,6 +44,15 @@ import {
   getAccount,
 } from "@solana/spl-token";
 import { parseAmount } from "./money";
+// Must match TREASURY_AUTHORITY in programs/token-vault/src/lib.rs.
+export const TREASURY_AUTHORITY = new PublicKey(
+  "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
+);
+/** Buying costs 1.10 USDC per BB; the 10% premium rounds up to the next base unit. */
+export function quoteBuy(quantity: bigint) {
+  const premium = (quantity + 9n) / 10n;
+  return { quantity, backing: quantity, premium, total: quantity + premium };
+}
 export async function prepareVaultTrade(
   connection: Connection,
   address: string,
@@ -94,10 +103,12 @@ export async function prepareVaultTrade(
   )
     throw Error("Unexpected vault account configuration.");
   const userUsdc = getAssociatedTokenAddressSync(usdc, user),
-    userToken = getAssociatedTokenAddressSync(token, user);
+    userToken = getAssociatedTokenAddressSync(token, user),
+    treasury = getAssociatedTokenAddressSync(usdc, TREASURY_AUTHORITY);
+  const buying = action === "buy";
   const data = Buffer.alloc(16);
   data.set(
-    action === "buy"
+    buying
       ? [102, 6, 61, 18, 1, 218, 235, 234]
       : [51, 230, 133, 164, 1, 127, 131, 173],
   );
@@ -115,6 +126,17 @@ export async function prepareVaultTrade(
       user,
       token,
     ),
+    // The first buyer pays the treasury account's rent; later buys skip creation.
+    ...(buying
+      ? [
+          createAssociatedTokenAccountIdempotentInstruction(
+            user,
+            treasury,
+            TREASURY_AUTHORITY,
+            usdc,
+          ),
+        ]
+      : []),
     new TransactionInstruction({
       programId: pid,
       keys: [
@@ -126,6 +148,9 @@ export async function prepareVaultTrade(
         { pubkey: userUsdc, isSigner: false, isWritable: true },
         { pubkey: userToken, isSigner: false, isWritable: true },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        ...(buying
+          ? [{ pubkey: treasury, isSigner: false, isWritable: true }]
+          : []),
       ],
       data,
     }),
@@ -147,9 +172,16 @@ export async function prepareVaultTrade(
   const missing = await Promise.all([
     connection.getAccountInfo(userUsdc, "confirmed"),
     connection.getAccountInfo(userToken, "confirmed"),
+    buying ? connection.getAccountInfo(treasury, "confirmed") : true,
   ]);
   const rent =
     missing.filter((a) => !a).length *
     (await connection.getMinimumBalanceForRentExemption(165));
-  return { transaction, feeLamports: fee.value, rentLamports: rent, lifetime };
+  return {
+    transaction,
+    feeLamports: fee.value,
+    rentLamports: rent,
+    lifetime,
+    quote: buying ? quoteBuy(units) : null,
+  };
 }

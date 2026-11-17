@@ -8,7 +8,26 @@ import {
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { prepareVaultTrade } from "../lib/wallet";
+import {
+  prepareVaultTrade,
+  quoteBuy,
+  TREASURY_AUTHORITY,
+} from "../lib/wallet";
+test("buy quote charges 1.10 USDC per BB with the premium rounded up", () => {
+  assert.deepEqual(quoteBuy(10_000_000n), {
+    quantity: 10_000_000n,
+    backing: 10_000_000n,
+    premium: 1_000_000n,
+    total: 11_000_000n,
+  });
+  for (const [quantity, premium] of [
+    [1n, 1n],
+    [10n, 1n],
+    [11n, 2n],
+    [2_500_001n, 250_001n],
+  ])
+    assert.equal(quoteBuy(quantity).premium, premium);
+});
 test("vault trade uses existing Anchor ABI, simulates, estimates rent and rejects substituted accounts", async (t) => {
   const pid = Keypair.generate().publicKey,
     usdc = Keypair.generate().publicKey,
@@ -88,7 +107,6 @@ test("vault trade uses existing Anchor ABI, simulates, estimates rent and reject
       lastValidBlockHeight: 100,
     }),
     simulateTransaction: async (tx: VersionedTransaction) => {
-      assert.equal(tx.message.compiledInstructions.length, 3);
       simulated++;
       return {
         value: { err: fail ? { InstructionError: [2, "Custom"] } : null },
@@ -108,7 +126,20 @@ test("vault trade uses existing Anchor ABI, simulates, estimates rent and reject
       action,
       "5.123456",
     );
-    const instruction = prepared.transaction.instructions[2];
+    const buying = action === "buy";
+    // Buying adds the treasury account creation and passes it as the ninth account.
+    assert.equal(prepared.transaction.instructions.length, buying ? 4 : 3);
+    const instruction = prepared.transaction.instructions.at(-1)!;
+    assert.equal(instruction.keys.length, buying ? 9 : 8);
+    if (buying) {
+      assert.equal(
+        instruction.keys[8].pubkey.toBase58(),
+        getAssociatedTokenAddressSync(usdc, TREASURY_AUTHORITY).toBase58(),
+      );
+      assert.equal(instruction.keys[8].isWritable, true);
+      assert.deepEqual(prepared.quote, quoteBuy(5123456n));
+      assert.equal(prepared.quote!.total, 5635802n);
+    } else assert.equal(prepared.quote, null);
     assert.deepEqual(
       instruction.data.subarray(0, 8),
       createHash("sha256").update(`global:${action}`).digest().subarray(0, 8),
@@ -119,7 +150,7 @@ test("vault trade uses existing Anchor ABI, simulates, estimates rent and reject
       getAssociatedTokenAddressSync(usdc, user).toBase58(),
     );
     assert.equal(prepared.feeLamports, 5000);
-    assert.equal(prepared.rentLamports, 4078560);
+    assert.equal(prepared.rentLamports, buying ? 6117840 : 4078560);
     assert.equal(prepared.transaction.feePayer?.toBase58(), user.toBase58());
   }
   assert.equal(simulated, 2);

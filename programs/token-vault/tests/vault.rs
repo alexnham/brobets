@@ -65,8 +65,57 @@ fn balance(svm: &LiteSVM, key: Address) -> u64 {
     )
 }
 
-#[test]
-fn trades_and_invalid_accounts_are_atomic() {
+struct Env {
+    svm: LiteSVM,
+    user: Keypair,
+    quote: Address,
+    vault: anchor_lang::prelude::Pubkey,
+    mint: anchor_lang::prelude::Pubkey,
+    reserve: anchor_lang::prelude::Pubkey,
+    treasury: Address,
+    user_usdc: Address,
+    user_token: Address,
+}
+impl Env {
+    fn trade(&self) -> accounts::Trade {
+        accounts::Trade {
+            user: pubkey(self.user.pubkey()),
+            vault: self.vault,
+            usdc_mint: pubkey(self.quote),
+            token_mint: self.mint,
+            reserve: self.reserve,
+            user_usdc: pubkey(self.user_usdc),
+            user_token: pubkey(self.user_token),
+            token_program: anchor_spl::token::ID,
+        }
+    }
+    fn buy_accounts(&self) -> accounts::Buy {
+        accounts::Buy {
+            trade: self.trade(),
+            treasury: pubkey(self.treasury),
+        }
+    }
+    fn buy(&mut self, amount: u64) -> bool {
+        let ix = ix(self.buy_accounts(), instruction::Buy { amount });
+        send(&mut self.svm, &self.user, ix)
+    }
+    fn sell(&mut self, amount: u64) -> bool {
+        let ix = ix(self.trade(), instruction::Sell { amount });
+        send(&mut self.svm, &self.user, ix)
+    }
+    /// (user USDC, user BB, reserve, treasury)
+    fn balances(&self) -> (u64, u64, u64, u64) {
+        (
+            balance(&self.svm, self.user_usdc),
+            balance(&self.svm, self.user_token),
+            balance(&self.svm, address(self.reserve)),
+            balance(&self.svm, self.treasury),
+        )
+    }
+}
+
+/// Initialized vault, an empty treasury and a user holding `usdc` base units.
+fn setup(usdc: u64) -> Env {
     let mut svm = LiteSVM::new();
     svm.add_program_from_file(
         address(token_vault::ID),
@@ -113,10 +162,131 @@ fn trades_and_invalid_accounts_are_atomic() {
         system_program: anchor_lang::system_program::ID,
     };
     assert!(send(&mut svm, &user, ix(init, instruction::Initialize {})));
+    let treasury = address(anchor_spl::associated_token::get_associated_token_address(
+        &token_vault::TREASURY_AUTHORITY,
+        &pubkey(quote),
+    ));
+    token_account(
+        &mut svm,
+        treasury,
+        quote,
+        address(token_vault::TREASURY_AUTHORITY),
+        0,
+    );
     let user_usdc = Address::new_unique();
     let user_token = Address::new_unique();
-    token_account(&mut svm, user_usdc, quote, user.pubkey(), 10_000_000);
+    token_account(&mut svm, user_usdc, quote, user.pubkey(), usdc);
     token_account(&mut svm, user_token, address(mint), user.pubkey(), 0);
+    Env {
+        svm,
+        user,
+        quote,
+        vault,
+        mint,
+        reserve,
+        treasury,
+        user_usdc,
+        user_token,
+    }
+}
+
+#[test]
+fn buy_charges_premium_and_redemption_stays_one_to_one() {
+    let mut env = setup(100_000_000);
+    // Exact: ten BB costs 11 USDC, 10 to the reserve and 1 to the treasury.
+    assert!(env.buy(10_000_000));
+    assert_eq!(
+        env.balances(),
+        (89_000_000, 10_000_000, 10_000_000, 1_000_000)
+    );
+    // Fractional quantities round the premium up to the next base unit.
+    let mut expected = env.balances();
+    for (amount, premium) in [(1, 1), (9, 1), (10, 1), (11, 2), (2_500_001, 250_001)] {
+        assert!(env.buy(amount));
+        expected.0 -= amount + premium;
+        expected.1 += amount;
+        expected.2 += amount;
+        expected.3 += premium;
+        assert_eq!(env.balances(), expected);
+    }
+    // Overflowing totals and zero are rejected without moving funds.
+    assert!(!env.buy(u64::MAX));
+    assert!(!env.buy(0));
+    assert_eq!(env.balances(), expected);
+
+    // Fee bypass: only the pinned wallet's associated USDC account is accepted.
+    let user = env.user.pubkey();
+    let authority = address(token_vault::TREASURY_AUTHORITY);
+    let own = Address::new_unique();
+    token_account(&mut env.svm, own, env.quote, user, 0);
+    // Owned by the treasury wallet but not its canonical associated account.
+    let stray = Address::new_unique();
+    token_account(&mut env.svm, stray, env.quote, authority, 0);
+    for fake in [own, stray, env.user_usdc, address(env.reserve)] {
+        let mut bad = env.buy_accounts();
+        bad.treasury = pubkey(fake);
+        let ix = ix(bad, instruction::Buy { amount: 1_000_000 });
+        assert!(!send(&mut env.svm, &env.user, ix));
+    }
+    // The old eight-account 1:1 buy no longer exists.
+    let old = ix(env.trade(), instruction::Buy { amount: 1_000_000 });
+    assert!(!send(&mut env.svm, &env.user, old));
+    assert_eq!(env.balances(), expected);
+    assert_eq!(balance(&env.svm, own) + balance(&env.svm, stray), 0);
+
+    // Redemption is unchanged, pays only from the reserve and never touches the treasury.
+    assert!(env.sell(2_500_001));
+    expected.0 += 2_500_001;
+    expected.1 -= 2_500_001;
+    expected.2 -= 2_500_001;
+    assert_eq!(env.balances(), expected);
+    let mut bad = env.trade();
+    bad.reserve = pubkey(env.treasury);
+    let ix = ix(bad, instruction::Sell { amount: 1 });
+    assert!(!send(&mut env.svm, &env.user, ix));
+    // BB obtained outside the vault cannot be redeemed against the treasury's USDC.
+    token_account(
+        &mut env.svm,
+        env.user_token,
+        address(env.mint),
+        user,
+        expected.2 + 1,
+    );
+    assert!(!env.sell(expected.2 + 1));
+    assert!(env.sell(expected.2));
+    assert_eq!(balance(&env.svm, address(env.reserve)), 0);
+    assert_eq!(balance(&env.svm, env.treasury), expected.3);
+}
+
+#[test]
+fn buy_rolls_back_when_the_premium_cannot_be_paid() {
+    // Enough for the 10 USDC backing but one base unit short of the 1 USDC premium.
+    let mut env = setup(10_999_999);
+    assert!(!env.buy(10_000_000));
+    assert_eq!(env.balances(), (10_999_999, 0, 0, 0));
+    // A missing treasury account fails the purchase instead of skipping the premium.
+    let mut env = setup(11_000_000);
+    env.svm
+        .set_account(env.treasury, Account::default())
+        .unwrap();
+    assert!(!env.buy(10_000_000));
+    assert_eq!(balance(&env.svm, env.user_usdc), 11_000_000);
+    assert_eq!(balance(&env.svm, address(env.reserve)), 0);
+}
+
+#[test]
+fn trades_and_invalid_accounts_are_atomic() {
+    let Env {
+        mut svm,
+        user,
+        quote,
+        vault,
+        mint,
+        reserve,
+        treasury,
+        user_usdc,
+        user_token,
+    } = setup(11_000_000);
     let trade = || accounts::Trade {
         user: pubkey(user.pubkey()),
         vault,
@@ -127,25 +297,30 @@ fn trades_and_invalid_accounts_are_atomic() {
         user_token: pubkey(user_token),
         token_program: anchor_spl::token::ID,
     };
+    let buy = |trade| accounts::Buy {
+        trade,
+        treasury: pubkey(treasury),
+    };
     assert!(!send(
         &mut svm,
         &user,
-        ix(trade(), instruction::Buy { amount: 0 })
+        ix(buy(trade()), instruction::Buy { amount: 0 })
     ));
     assert!(!send(
         &mut svm,
         &user,
-        ix(trade(), instruction::Buy { amount: 10_000_001 })
+        ix(buy(trade()), instruction::Buy { amount: 10_000_001 })
     ));
-    assert_eq!(balance(&svm, user_usdc), 10_000_000);
+    assert_eq!(balance(&svm, user_usdc), 11_000_000);
     assert!(send(
         &mut svm,
         &user,
-        ix(trade(), instruction::Buy { amount: 2_500_001 })
+        ix(buy(trade()), instruction::Buy { amount: 2_500_001 })
     ));
-    assert_eq!(balance(&svm, user_usdc), 7_499_999);
+    assert_eq!(balance(&svm, user_usdc), 8_249_998);
     assert_eq!(balance(&svm, user_token), 2_500_001);
     assert_eq!(balance(&svm, address(reserve)), 2_500_001);
+    assert_eq!(balance(&svm, treasury), 250_001);
     let empty_token = Address::new_unique();
     token_account(&mut svm, empty_token, address(mint), user.pubkey(), 0);
     let mut bad = trade();
@@ -164,14 +339,14 @@ fn trades_and_invalid_accounts_are_atomic() {
     assert!(!send(
         &mut svm,
         &user,
-        ix(bad, instruction::Buy { amount: 1 })
+        ix(buy(bad), instruction::Buy { amount: 1 })
     ));
     let mut bad = trade();
     bad.user_token = pubkey(user_usdc);
     assert!(!send(
         &mut svm,
         &user,
-        ix(bad, instruction::Buy { amount: 1 })
+        ix(buy(bad), instruction::Buy { amount: 1 })
     ));
     let mut bad = trade();
     bad.reserve = pubkey(user_usdc);
@@ -190,7 +365,7 @@ fn trades_and_invalid_accounts_are_atomic() {
         &user,
         ix(trade(), instruction::Sell { amount: 2_500_001 })
     ));
-    assert_eq!(balance(&svm, user_usdc), 10_000_000);
+    assert_eq!(balance(&svm, user_usdc), 10_749_999);
     assert_eq!(balance(&svm, user_token), 0);
     assert_eq!(balance(&svm, address(reserve)), 0);
     let supply = u64::from_le_bytes(
@@ -199,11 +374,12 @@ fn trades_and_invalid_accounts_are_atomic() {
             .unwrap(),
     );
     assert_eq!(supply, 0);
+    token_account(&mut svm, user_usdc, quote, user.pubkey(), 11_000_000);
     // Escrow is independent of the USDC reserve and only accepts this vault token.
     assert!(send(
         &mut svm,
         &user,
-        ix(trade(), instruction::Buy { amount: 10_000_000 })
+        ix(buy(trade()), instruction::Buy { amount: 10_000_000 })
     ));
     let other = Keypair::new();
     svm.airdrop(&other.pubkey(), 1_000_000_000).unwrap();

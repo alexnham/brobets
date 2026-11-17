@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useHeliusWallet } from "helius-wallet-kit";
 import { prepareVaultTrade } from "@/lib/wallet";
+import { formatAmount } from "@/lib/money";
 export function VaultExchange({
   onConfirmed,
 }: {
@@ -108,7 +109,7 @@ export function VaultExchange({
   };
   return (
     <div className="token-exchange">
-      <h3>1 token = 1 USDC</h3>
+      <h3>Buy BB at 1.10 USDC · redeem at 1.00 USDC</h3>
       <p className="hint">
         Devnet only. Original SPL tokens. Network fees and account rent are paid
         separately in SOL.
@@ -138,7 +139,7 @@ export function VaultExchange({
             </button>
           </div>
           <label className="field">
-            {action === "buy" ? "USDC to spend" : "Tokens to redeem"}
+            {action === "buy" ? "BB to buy" : "BB to redeem"}
             <input
               value={amount}
               disabled={busy}
@@ -152,7 +153,23 @@ export function VaultExchange({
           {prepared ? (
             <>
               <p className="hint">
-                {action === "buy" ? "Buy" : "Redeem"} {amount} tokens · 1:1 rate
+                {prepared.quote ? (
+                  <>
+                    Quantity: {formatAmount(prepared.quote.quantity)} BB
+                    <br />
+                    Backing (to reserve): {formatAmount(prepared.quote.backing)}{" "}
+                    USDC
+                    <br />
+                    Premium (10%, to treasury):{" "}
+                    {formatAmount(prepared.quote.premium)} USDC
+                    <br />
+                    Total: {formatAmount(prepared.quote.total)} USDC
+                  </>
+                ) : (
+                  <>
+                    Redeem {amount} BB for {amount} USDC · no premium
+                  </>
+                )}
                 <br />
                 Fee payer: your wallet · Devnet
                 <br />
