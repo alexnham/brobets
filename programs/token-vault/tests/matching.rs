@@ -53,9 +53,13 @@ fn balance(svm: &LiteSVM, key: Address) -> u64 {
     )
 }
 
-fn act(svm: &mut LiteSVM, user: Address, instruction: Instruction) -> bool {
+// Every transaction's fee is paid by the sponsor, so players never need SOL.
+fn sponsor() -> Address {
+    Address::new_from_array([7; 32])
+}
+fn act(svm: &mut LiteSVM, _signer: Address, instruction: Instruction) -> bool {
     svm.expire_blockhash();
-    let mut tx = Transaction::new_with_payer(&[instruction], Some(&user));
+    let mut tx = Transaction::new_with_payer(&[instruction], Some(&sponsor()));
     tx.message.recent_blockhash = svm.latest_blockhash();
     tx.signatures = vec![Default::default(); tx.message.header.num_required_signatures as usize];
     svm.send_transaction(tx).is_ok()
@@ -74,7 +78,8 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
     let maker = Address::new_unique();
     let taker = Address::new_unique();
     let rival = Address::new_unique();
-    for user in [admin, maker, taker, rival] {
+    // Players hold zero SOL: only the admin and the sponsor are funded.
+    for user in [admin, sponsor()] {
         svm.airdrop(&user, 10_000_000_000).unwrap();
     }
     let quote = Address::new_unique();
@@ -101,10 +106,10 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
     let market = pda(&[b"matching_v1"]);
     assert!(act(
         &mut svm,
-        maker,
+        admin,
         ix(
             accounts::Initialize {
-                payer: pubkey(maker),
+                payer: pubkey(admin),
                 usdc_mint: pubkey(quote),
                 vault,
                 token_mint: mint,
@@ -160,7 +165,8 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
         assert!(act(&mut svm, admin, ix(create(admin), data())));
         let w = pda(&[b"wager_v1", q.as_ref(), maker.as_ref(), &0u64.to_le_bytes()]);
         let e = pda(&[b"wager_escrow_v1", w.as_ref()]);
-        let propose = || accounts::ProposeWager {
+        let propose_paid_by = |payer| accounts::ProposeWager {
+            payer: pubkey(payer),
             maker: pubkey(maker),
             question: q,
             token_mint: mint,
@@ -170,7 +176,58 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             token_program: anchor_spl::token::ID,
             system_program: anchor_lang::system_program::ID,
         };
+        let propose = || propose_paid_by(sponsor());
+        if case == 0 {
+            // Unsponsored fallback: a funded maker may be their own payer. Dust sent to the
+            // wager and escrow addresses beforehand must not block their creation.
+            let solo = Address::new_unique();
+            let sa = Address::new_unique();
+            svm.airdrop(&solo, 1_000_000_000).unwrap();
+            token_account(&mut svm, sa, address(mint), solo, 1_000_000);
+            let sw = pda(&[b"wager_v1", q.as_ref(), solo.as_ref(), &9u64.to_le_bytes()]);
+            let se = pda(&[b"wager_escrow_v1", sw.as_ref()]);
+            svm.airdrop(&address(sw), 1_000_000).unwrap();
+            svm.airdrop(&address(se), 1_000_000).unwrap();
+            let lamports = svm.get_account(&solo).unwrap().lamports;
+            assert!(act(
+                &mut svm,
+                solo,
+                ix(
+                    accounts::ProposeWager {
+                        payer: pubkey(solo),
+                        maker: pubkey(solo),
+                        question: q,
+                        token_mint: mint,
+                        wager: sw,
+                        escrow: se,
+                        maker_token: pubkey(sa),
+                        token_program: anchor_spl::token::ID,
+                        system_program: anchor_lang::system_program::ID,
+                    },
+                    instruction::ProposeWager {
+                        proposal_id: 9,
+                        side: 2,
+                        amount: 1_000_000
+                    }
+                )
+            ));
+            assert!(svm.get_account(&solo).unwrap().lamports < lamports);
+            assert_eq!(balance(&svm, address(se)), 1_000_000);
+        }
         let before = balance(&svm, ma);
+        // Rent comes from the payer account, not the fee payer: a zero-SOL maker cannot fund it.
+        assert!(!act(
+            &mut svm,
+            maker,
+            ix(
+                propose_paid_by(maker),
+                instruction::ProposeWager {
+                    proposal_id: 0,
+                    side: 1,
+                    amount: 5_123_456
+                }
+            )
+        ));
         for (side, amount) in [(0, 5_123_456), (1, 0), (1, u64::MAX)] {
             assert!(!act(
                 &mut svm,
@@ -473,5 +530,9 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             ix(withdraw(maker, ma), instruction::ClaimWager {})
         ));
         assert_eq!(balance(&svm, address(e)), 0);
+    }
+    // Propose, match, cancel, claim and refund all ran without any player ever holding SOL.
+    for player in [maker, taker, rival] {
+        assert!(svm.get_account(&player).is_none_or(|a| a.lamports == 0));
     }
 }

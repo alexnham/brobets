@@ -704,8 +704,12 @@
       ],
       "accounts": [
         {
-          "name": "maker",
+          "name": "payer",
           "writable": true,
+          "signer": true
+        },
+        {
+          "name": "maker",
           "signer": true
         },
         {
