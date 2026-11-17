@@ -13,8 +13,9 @@ Recorded October 28, 2026 (America/Toronto). This file contains public addresses
 | ProgramData | `JCnkbUMKsQVgoAhiuJ9n9o1kNKUnagNF7rK6FF5EMCQC` | Upgradeable program code and upgrade authority record |
 | USDC mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | Six-decimal devnet USDC quote token |
 | Vault state PDA | `7mCh2MGKTEYFrMb7u9FjxWYnuT7qtzhfUnh6JGwLRPAY` | Links USDC and vault token; controls minting and reserve transfers |
-| Vault token mint PDA | `yU47auGVnuqUqYACt8u3388nfP29mTWQcLRgAHPAjMC` | New six-decimal token, bought/redeemed at 1 USDC |
+| Vault token mint PDA | `yU47auGVnuqUqYACt8u3388nfP29mTWQcLRgAHPAjMC` | New six-decimal token, redeemed at 1 USDC; bought at 1.10 USDC after the buy-fee upgrade |
 | USDC reserve PDA | `AefhcK8bHKXxGyfTSbUtb9VmuVYHStx6H1EBFdVE8iRg` | SPL token account holding the backing USDC |
+| USDC treasury | `8VeAUKB7VKrj3NSTGVNWa4RHeEWBgCnyws75U6TFJcwa` | App admin wallet's USDC associated token account; receives the 10% purchase fee. Derived, not yet deployed: takes effect with the buy-fee program upgrade and is created by the first buy after it |
 
 Explorer: `https://explorer.solana.com/address/<ADDRESS>?cluster=devnet`.
 
@@ -26,6 +27,7 @@ Explorer: `https://explorer.solana.com/address/<ADDRESS>?cluster=devnet`.
 | Program upgrades | `GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG` — verified using `solana program show` |
 | Vault token mint authority | Vault state PDA: `7mCh2MGKTEYFrMb7u9FjxWYnuT7qtzhfUnh6JGwLRPAY` |
 | USDC reserve token authority | Vault state PDA: `7mCh2MGKTEYFrMb7u9FjxWYnuT7qtzhfUnh6JGwLRPAY` |
+| USDC treasury token authority | App admin wallet `ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8` (pinned in the program as `TREASURY_AUTHORITY`); spends the fee directly |
 | Vault token freeze authority | None in the current initialization code |
 | Betting oracle | Set separately on each bet to the wallet signing `create_bet`; not assigned by vault initialization |
 | Betting escrow token authority | That escrow's bet PDA |

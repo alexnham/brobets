@@ -1172,7 +1172,7 @@ function Board({
           )}
           {wallet.exchange ?? (
             <div className="token-exchange">
-              <h3>1 token = 1 USDC</h3>
+              <h3>1 BB = 1 USDC · 10% fee to buy</h3>
               <p className="hint">
                 Vault trading requires Helius login and devnet deployment
                 configuration.

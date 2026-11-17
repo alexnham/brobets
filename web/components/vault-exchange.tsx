@@ -109,7 +109,7 @@ export function VaultExchange({
   };
   return (
     <div className="token-exchange">
-      <h3>Buy BB at 1.10 USDC · redeem at 1.00 USDC</h3>
+      <h3>1 BB = 1 USDC · 10% fee to buy</h3>
       <p className="hint">
         Devnet only. Original SPL tokens. Network fees and account rent are paid
         separately in SOL.
@@ -160,14 +160,14 @@ export function VaultExchange({
                     Backing (to reserve): {formatAmount(prepared.quote.backing)}{" "}
                     USDC
                     <br />
-                    Premium (10%, to treasury):{" "}
+                    Fee (10%, to treasury):{" "}
                     {formatAmount(prepared.quote.premium)} USDC
                     <br />
                     Total: {formatAmount(prepared.quote.total)} USDC
                   </>
                 ) : (
                   <>
-                    Redeem {amount} BB for {amount} USDC · no premium
+                    Redeem {amount} BB for {amount} USDC · no fee
                   </>
                 )}
                 <br />
