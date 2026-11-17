@@ -1,0 +1,11 @@
+{
+  "turnkeyCore": "1.14.1",
+  "all256BytesPreserved": true,
+  "activeSessionSuborganizationUsed": true,
+  "requestMatchesStampedBody": true,
+  "policyDenialPropagated": true,
+  "transport": "mocked; no network requests or real signatures",
+  "heliusProjectAccessVerified": false,
+  "userApprovalVerified": false,
+  "liveRecoveryTested": false
+}
