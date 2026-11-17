@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { Connection, PublicKey, Keypair, VersionedTransaction } from "@solana/web3.js";
+import {
+  Connection,
+  PublicKey,
+  Keypair,
+  SystemProgram,
+  Transaction,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import {
   MintLayout,
   AccountLayout,
@@ -13,6 +20,7 @@ import {
   quoteBuy,
   TREASURY_AUTHORITY,
 } from "../lib/wallet";
+import { sponsorSign } from "../lib/sponsor";
 test("buy quote charges 1.10 USDC per BB with the premium rounded up", () => {
   assert.deepEqual(quoteBuy(10_000_000n), {
     quantity: 10_000_000n,
@@ -31,7 +39,8 @@ test("buy quote charges 1.10 USDC per BB with the premium rounded up", () => {
 test("vault trade uses existing Anchor ABI, simulates, estimates rent and rejects substituted accounts", async (t) => {
   const pid = Keypair.generate().publicKey,
     usdc = Keypair.generate().publicKey,
-    user = Keypair.generate().publicKey;
+    userKey = Keypair.generate(),
+    user = userKey.publicKey;
   process.env.NEXT_PUBLIC_VAULT_PROGRAM_ID = pid.toBase58();
   process.env.NEXT_PUBLIC_USDC_MINT = usdc.toBase58();
   const [vault] = PublicKey.findProgramAddressSync(
@@ -154,6 +163,67 @@ test("vault trade uses existing Anchor ABI, simulates, estimates rent and reject
     assert.equal(prepared.transaction.feePayer?.toBase58(), user.toBase58());
   }
   assert.equal(simulated, 2);
+  // Sponsored: Brobets pays the fee and creates token accounts; the player still signs.
+  const sponsor = Keypair.generate(),
+    other = Keypair.generate();
+  const sponsored = async (action: "buy" | "sell") => {
+    const p = await prepareVaultTrade(
+      mock,
+      user.toBase58(),
+      action,
+      "5",
+      sponsor.publicKey.toBase58(),
+    );
+    assert.equal(p.sponsored, true);
+    assert.equal(p.user, user.toBase58());
+    assert.equal(p.transaction.feePayer!.toBase58(), sponsor.publicKey.toBase58());
+    for (const ix of p.transaction.instructions.slice(0, -1))
+      assert.equal(ix.keys[0].pubkey.toBase58(), sponsor.publicKey.toBase58());
+    return p.transaction;
+  };
+  const sign = (tx: Transaction, player = user, signer = userKey) => {
+    tx.partialSign(signer);
+    return sponsorSign(tx.serialize({ requireAllSignatures: false }), sponsor, player);
+  };
+  for (const action of ["buy", "sell"] as const) {
+    const tx = await sponsored(action),
+      message = tx.serializeMessage(),
+      out = Transaction.from(sign(tx));
+    assert.ok(out.serializeMessage().equals(message));
+    assert.ok(out.verifySignatures());
+  }
+  // Refused: another session's player, a different treasury, a sponsor-paid transfer,
+  // a treasury creation on a sell, and an extra instruction.
+  assert.throws(() => sign(Transaction.from(Buffer.alloc(0))), /./);
+  const wrongPlayer = await sponsored("buy");
+  assert.throws(() => sign(wrongPlayer, other.publicKey), /./);
+  const treasury = await sponsored("buy");
+  treasury.instructions.at(-1)!.keys[8].pubkey = getAssociatedTokenAddressSync(
+    usdc,
+    other.publicKey,
+  );
+  assert.throws(() => sign(treasury), /trade accounts/);
+  const drain = await sponsored("sell");
+  drain.instructions[0] = SystemProgram.transfer({
+    fromPubkey: sponsor.publicKey,
+    toPubkey: user,
+    lamports: 1,
+  });
+  assert.throws(() => sign(drain), /token account creation/);
+  const sellTreasury = await sponsored("sell"),
+    buyTx = await sponsored("buy");
+  sellTreasury.instructions.unshift(buyTx.instructions[2]);
+  assert.throws(() => sign(sellTreasury), /instruction count/);
+  const amount = await sponsored("sell");
+  amount.instructions.at(-1)!.data = Buffer.concat([
+    amount.instructions.at(-1)!.data,
+    Buffer.from([0]),
+  ]);
+  assert.throws(() => sign(amount), /trade accounts/);
+  // Without a sponsor the player pays exactly as before.
+  const own = await prepareVaultTrade(mock, user.toBase58(), "buy", "5");
+  assert.equal(own.sponsored, false);
+  assert.throws(() => sign(own.transaction), /fee payer/);
   fail = true;
   await assert.rejects(
     prepareVaultTrade(mock, user.toBase58(), "buy", "5"),

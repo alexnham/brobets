@@ -158,6 +158,15 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
       throw e;
     }
   };
+  // The sponsor endpoint and admin actions need a backend session for this wallet.
+  const ensureSession = async () => {
+    let current = await api("/api/auth/session");
+    if (current.wallet !== w.address) {
+      await authenticate();
+      current = await api("/api/auth/session");
+    }
+    return current;
+  };
   return (
     <Board
       initialQuestionId={initialQuestionId}
@@ -167,7 +176,9 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
         enabled: true,
         balances,
         error,
-        exchange: <VaultExchange onConfirmed={refresh} />,
+        exchange: (
+          <VaultExchange onConfirmed={refresh} ensureSession={ensureSession} />
+        ),
         refresh,
         signIn: async () => {
           try {
@@ -180,11 +191,7 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
         prepareMatching: async (action, input) => {
           if (!w.address || w.cluster !== "devnet")
             throw Error("Sign in on devnet first.");
-          let current = await api("/api/auth/session");
-          if (current.wallet !== w.address) {
-            await authenticate();
-            current = await api("/api/auth/session");
-          }
+          const current = await ensureSession();
           if (
             ["initialize", "create", "edit", "resolve"].includes(action) &&
             !current.admin

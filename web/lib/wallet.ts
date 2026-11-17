@@ -48,6 +48,11 @@ import { parseAmount } from "./money";
 export const TREASURY_AUTHORITY = new PublicKey(
   "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
 );
+// Anchor discriminators for the vault's `buy` and `sell` instructions.
+export const TRADE_DISCRIMINATORS = {
+  buy: [102, 6, 61, 18, 1, 218, 235, 234],
+  sell: [51, 230, 133, 164, 1, 127, 131, 173],
+};
 /** Buying costs 1.10 USDC per BB; the 10% premium rounds up to the next base unit. */
 export function quoteBuy(quantity: bigint) {
   const premium = (quantity + 9n) / 10n;
@@ -58,9 +63,12 @@ export async function prepareVaultTrade(
   address: string,
   action: "buy" | "sell",
   value: string,
+  sponsorAddress?: string,
 ) {
   const units = parseAmount(value),
-    user = new PublicKey(address);
+    user = new PublicKey(address),
+    // The sponsor pays the network fee and account rent; the player still signs.
+    payer = sponsorAddress ? new PublicKey(sponsorAddress) : user;
   const pid = new PublicKey(process.env.NEXT_PUBLIC_VAULT_PROGRAM_ID!);
   const usdc = new PublicKey(process.env.NEXT_PUBLIC_USDC_MINT!);
   const [vault] = PublicKey.findProgramAddressSync(
@@ -107,21 +115,17 @@ export async function prepareVaultTrade(
     treasury = getAssociatedTokenAddressSync(usdc, TREASURY_AUTHORITY);
   const buying = action === "buy";
   const data = Buffer.alloc(16);
-  data.set(
-    buying
-      ? [102, 6, 61, 18, 1, 218, 235, 234]
-      : [51, 230, 133, 164, 1, 127, 131, 173],
-  );
+  data.set(TRADE_DISCRIMINATORS[action]);
   new DataView(data.buffer, data.byteOffset, data.byteLength).setBigUint64(8, units, true);
   const transaction = new Transaction().add(
     createAssociatedTokenAccountIdempotentInstruction(
-      user,
+      payer,
       userUsdc,
       user,
       usdc,
     ),
     createAssociatedTokenAccountIdempotentInstruction(
-      user,
+      payer,
       userToken,
       user,
       token,
@@ -130,7 +134,7 @@ export async function prepareVaultTrade(
     ...(buying
       ? [
           createAssociatedTokenAccountIdempotentInstruction(
-            user,
+            payer,
             treasury,
             TREASURY_AUTHORITY,
             usdc,
@@ -157,7 +161,7 @@ export async function prepareVaultTrade(
   );
   const lifetime = await connection.getLatestBlockhash("confirmed");
   transaction.recentBlockhash = lifetime.blockhash;
-  transaction.feePayer = user;
+  transaction.feePayer = payer;
   const simulation = await connection.simulateTransaction(
     new VersionedTransaction(transaction.compileMessage()),
     { commitment: "confirmed", sigVerify: false },
@@ -179,6 +183,8 @@ export async function prepareVaultTrade(
     (await connection.getMinimumBalanceForRentExemption(165));
   return {
     transaction,
+    user: address,
+    sponsored: !payer.equals(user),
     feeLamports: fee.value,
     rentLamports: rent,
     lifetime,
