@@ -1,0 +1,136 @@
+{
+  "date": "2026-11-17",
+  "environment": "local Surfpool; test USDC; no devnet broadcasts",
+  "fixtureSha256": "f181d926b8ad45d53755b360a3f7cf1519077155decf532b0e2004721e9f7bba",
+  "transactions": [
+    {
+      "action": "external_payment",
+      "sponsorPays": false,
+      "feeLamports": 5000,
+      "computeUnitsConsumed": 76,
+      "feePayerNetLamportsSpent": 5000
+    },
+    {
+      "action": "anonymous_deposit",
+      "sponsorPays": true,
+      "feeLamports": 10000,
+      "computeUnitsConsumed": 359604,
+      "feePayerNetLamportsSpent": 15000
+    },
+    {
+      "action": "bb_purchase",
+      "sponsorPays": true,
+      "feeLamports": 10000,
+      "computeUnitsConsumed": 452330,
+      "feePayerNetLamportsSpent": 15000
+    },
+    {
+      "action": "public_redemption",
+      "sponsorPays": true,
+      "feeLamports": 10000,
+      "computeUnitsConsumed": 18805,
+      "feePayerNetLamportsSpent": 10000
+    },
+    {
+      "action": "redemption_anonymous_deposit",
+      "sponsorPays": true,
+      "feeLamports": 10000,
+      "computeUnitsConsumed": 359977,
+      "feePayerNetLamportsSpent": 15000
+    },
+    {
+      "action": "cashout_ata_creation",
+      "sponsorPays": true,
+      "feeLamports": 5000,
+      "computeUnitsConsumed": 13525,
+      "feePayerNetLamportsSpent": 2044280
+    },
+    {
+      "action": "private_withdrawal",
+      "sponsorPays": true,
+      "feeLamports": 5000,
+      "computeUnitsConsumed": 425770,
+      "feePayerNetLamportsSpent": 10000
+    }
+  ],
+  "accountRent": [
+    {
+      "role": "receiving_usdc",
+      "perUser": true,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "betting_usdc",
+      "perUser": true,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "betting_bb",
+      "perUser": true,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "cashout_usdc",
+      "perUser": true,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "canonical_treasury_usdc",
+      "perUser": false,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "reserve_usdc",
+      "perUser": false,
+      "dataBytes": 165,
+      "lockedLamports": 2039280,
+      "rentExemptMinimumLamports": 2039280
+    },
+    {
+      "role": "vault",
+      "perUser": false,
+      "dataBytes": 73,
+      "lockedLamports": 1398960,
+      "rentExemptMinimumLamports": 1398960
+    },
+    {
+      "role": "bb_mint",
+      "perUser": false,
+      "dataBytes": 82,
+      "lockedLamports": 1461600,
+      "rentExemptMinimumLamports": 1461600
+    }
+  ],
+  "depositSdkProofSubmissionIndexingWallMs": 9687,
+  "purchaseSdkProofWallMs": 5982,
+  "redemptionDepositSdkProofSubmissionIndexingWallMs": 4404,
+  "withdrawalSdkProofWallMs": 5298,
+  "priorityFeeRequestedLamports": 0,
+  "hostedProverCost": null,
+  "hostedRelayCost": null,
+  "failedBroadcastFee": null,
+  "privateRegistrationRent": null,
+  "measuredTotals": {
+    "fundingSponsoredNetDebitLamports": 30000,
+    "fundingPerUserTokenRentLamports": 6117840,
+    "newUserFundingKnownFloorLamports": 6147840,
+    "exitWithNewDestinationNetDebitLamports": 2079280,
+    "exitWithExistingDestinationModeledLamports": 35000,
+    "roundTripKnownFloorLamports": 8227120,
+    "allListedPerUserLockedRentLamports": 8157120,
+    "listedSharedLockedRentLamports": 6939120,
+    "sponsoredNetworkFeeLamports": 50000,
+    "allSponsoredTransactionNetDebitLamports": 2109280,
+    "sponsoredNonRentTransactionDebitLamports": 70000
+  }
+}

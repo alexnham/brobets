@@ -1,0 +1,65 @@
+{
+  "date": "2026-11-17",
+  "cluster": "isolated local Surfpool; no devnet broadcast",
+  "test": "no_connect::brobets_no_connect_payment_buys_bb",
+  "status": "passed",
+  "testSeconds": 47.03,
+  "realProofs": true,
+  "customPrivacyRingsCommit": "cc21e141c65e845e61dca3418f2b1be3815f51f7",
+  "zolanaCommit": "b99ba45aa76029f8e89a4004725b9b3a6580a1ab",
+  "vaultProgramSha256": "bd3e5e26c07f225acca42a56344b1dc1b51bfa9f2cc79164e4f1f0639d251b4f",
+  "fixtureSha256": "f181d926b8ad45d53755b360a3f7cf1519077155decf532b0e2004721e9f7bba",
+  "localSignatures": {
+    "externalPayment": "4sBpUcgH57YHB13iPJw4xVErggYajHHar124gd6v9G9fxjtreZxvnMxT7DuHfnzbv6WFBFg9wDC8W5QZeEG62MjX",
+    "anonymousDeposit": "87rt9CkZF4SUZY2Rewg4FR5o3UN7r63xcrue9SHVS5vvXVxu3GwDYTXfSBjiNQYuTaUNNLsX8ycwGQjSuVUdLcU",
+    "bbPurchase": "39Z2Qn13JaHms6wcN1mCYc4LWUDffVASa84rqqzuPuaE9h7ybr4fBeK9oKXUKtwXsbx9ENCUoZHtWR5hE8NBZLs6",
+    "publicRedemption": "3uUNL2bf5TPwZiQsXXpmEpyMW7V2Fzh9Lu9NmUw3tUtsFP2FQCdbJptHi7ymX3Bv2jfQAf47NyDxhywd17KyEyNT",
+    "redemptionAnonymousDeposit": "GWPP1makrZqxunGi1eFrjajfEqhgG61Sy2VBMq9BzvLKyddbQZP8s8mNH5C6euUqVrreuwFPhnC7rSaC9AUr7b5",
+    "cashoutAtaCreation": "5u3ZNTJnqftAAW5Xd9m9WLm6gwhDHvQCfVXScenivRyhgh5otW8ApkePD2M99zdgk2MNaEvgmiHet9NEDbVQqp7c",
+    "privateWithdrawal": "4bg4dfiZ51mrwA61G4fcaryiZwPsPr9gQLjonMGt4mTQWvnjgRgr6PybZmZJ4cXQpREsuZwNzcb86CRRCuGvWYNz"
+  },
+  "assertionsPassed": [
+    "ordinary SPL ingress",
+    "separate receiving authority",
+    "sponsor-only public-token transfer rejected with SPL OwnerMismatch",
+    "receiver and bettor have no SOL account",
+    "failed companion instruction rolls back private tree state",
+    "spent proof rejected in a distinct transaction with typed transaction error",
+    "public static and loaded account separation",
+    "canonical reserve, treasury and BB balances",
+    "1:1 full public redemption followed by anonymous deposit",
+    "full anonymous withdrawal to a new sponsored ATA",
+    "purchase premium retained after exit",
+    "zero-SOL bettor and withdrawal recipient",
+    "withdrawal public account separation"
+  ],
+  "notEstablished": [
+    "embedded-wallet provisioning of separate receiving/private/betting keys",
+    "embedded approval UX",
+    "shielded-key recovery",
+    "hosted anonymous Ring or relay access",
+    "production whole-lifecycle unlinkability",
+    "payment polling/reconciliation and refund handling",
+    "actual exchange withdrawal",
+    "atomic sell-and-shield redemption",
+    "funded operational exit reserve policy"
+  ],
+  "costMeasurements": "cost-results.json",
+  "purchaseBaseUnits": {
+    "publicPaymentUSDC": 11000000,
+    "reserveUSDC": 10000000,
+    "premiumUSDC": 1000000,
+    "bbMinted": 10000000,
+    "bettorPublicUSDC": 0,
+    "remainingPrivateUSDC": 0
+  },
+  "exitBaseUnits": {
+    "bbRedeemed": 10000000,
+    "publicUSDCBeforeShielding": 10000000,
+    "publicUSDCWithdrawn": 10000000,
+    "remainingBB": 0,
+    "remainingReserveUSDC": 0,
+    "remainingPrivateUSDC": 0,
+    "treasuryUSDC": 1000000
+  }
+}
