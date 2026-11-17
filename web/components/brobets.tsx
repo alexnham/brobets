@@ -138,8 +138,19 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
       const { message } = await api("/api/auth/challenge", {
         wallet: w.address,
       });
-      const signature = await w.signMessage(message);
-      const s = await api("/api/auth/verify", { signature });
+      // The wallet kit's sign prompt is a normal-layer overlay, so it renders under
+      // any native <dialog> in the top layer. Step ours aside while it is up.
+      const open = [
+        ...document.querySelectorAll<HTMLDialogElement>("dialog[open]"),
+      ];
+      open.forEach((d) => d.close());
+      let signature: string;
+      try {
+        signature = await w.signMessage(message);
+      } finally {
+        open.forEach((d) => d.isConnected && d.showModal());
+      }
+      const s =await api("/api/auth/verify", { signature });
       setAdmin(s.admin);
       setError("");
     } catch (e) {
@@ -182,13 +193,20 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
               "Server admin wallet configuration does not match this account.",
             );
           const { prepareMatching } = await import("@/lib/matching");
-          return prepareMatching(w.connection, w.address, action, input);
+          const sponsor = (await api("/api/sponsor")).address;
+          return prepareMatching(
+            w.connection,
+            w.address,
+            action,
+            input,
+            sponsor ?? undefined,
+          );
         },
         sendMatching: async (prepared) => {
           if (
             !w.address ||
             w.cluster !== "devnet" ||
-            prepared.transaction.feePayer?.toBase58() !== w.address
+            prepared.user !== w.address
           )
             throw Error("Wallet or network changed. Review again.");
           if (
@@ -204,7 +222,7 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
             );
           // Persist the deterministic transaction signature before broadcast, so even
           // a send timeout can be reconciled without risking a repeated deposit.
-          const signed = await w.signTransaction(
+          let signed = await w.signTransaction(
             prepared.transaction.serialize({
               requireAllSignatures: false,
               verifySignatures: false,
@@ -212,6 +230,16 @@ function Connected({ initialQuestionId }: { initialQuestionId?: string }) {
           );
           const { Transaction } = await import("@solana/web3.js");
           const { default: bs58 } = await import("bs58");
+          // Brobets adds its fee-payer signature to the exact message the player approved.
+          if (prepared.sponsored)
+            signed = Buffer.from(
+              (
+                await api("/api/sponsor", {
+                  transaction: Buffer.from(signed).toString("base64"),
+                })
+              ).transaction,
+              "base64",
+            );
           const signedTransaction = Transaction.from(signed);
           if (
             !signedTransaction
@@ -1058,15 +1086,20 @@ function Board({
             </div>
             <div>
               <dt>Network fee</dt>
-              <dd>{`${(prepared?.feeLamports ?? 0) / 1e9} SOL`}</dd>
+              <dd>
+                {prepared?.sponsored
+                  ? "Paid by Brobets"
+                  : `${(prepared?.feeLamports ?? 0) / 1e9} SOL`}
+              </dd>
             </div>
           </dl>
           {
             <>
               <p className="hint">
-                Fee payer: your Helius wallet. Account rent: up to{" "}
-                {(prepared?.rentLamports ?? 0) / 1e9} SOL. Brobets tokens only;
-                no platform fee.
+                {prepared?.sponsored
+                  ? "Brobets pays the network fee and account rent, so you need no SOL."
+                  : `Fee payer: your Helius wallet. Account rent: up to ${(prepared?.rentLamports ?? 0) / 1e9} SOL.`}{" "}
+                Brobets tokens only; no platform fee.
               </p>
               <p className="hint wallet-address">
                 {prepared?.escrowAddress

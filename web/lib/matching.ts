@@ -343,12 +343,19 @@ const instructionName: Record<MatchAction, string> = {
   resolve: "resolve_question",
   expire: "expire_question",
 };
+export const SPONSORED_ACTIONS: MatchAction[] = [
+  "propose",
+  "match",
+  "cancel",
+  "claim",
+];
 export type PreparedMatch = Awaited<ReturnType<typeof prepareMatching>>;
 export async function prepareMatching(
   connection: Connection,
   userAddress: string,
   action: MatchAction,
   input: MatchInput,
+  sponsorAddress?: string,
 ) {
   if (
     (await connection.getGenesisHash()) !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
@@ -356,6 +363,12 @@ export async function prepareMatching(
     throw Error("Matching is devnet only");
   const d = deployment(),
     user = new PublicKey(userAddress),
+    // The sponsor pays the network fee and account rent for wager actions; the player
+    // still signs and remains the only authority over their tokens.
+    payer =
+      sponsorAddress && SPONSORED_ACTIONS.includes(action)
+        ? new PublicKey(sponsorAddress)
+        : user,
     tx = new Transaction();
   if (
     ["initialize", "create", "edit", "resolve"].includes(action) &&
@@ -507,7 +520,7 @@ export async function prepareMatching(
   ) {
     tx.add(
       createAssociatedTokenAccountIdempotentInstruction(
-        user,
+        payer,
         tokenAccount,
         user,
         d.mint,
@@ -520,6 +533,7 @@ export async function prepareMatching(
     : undefined;
   const accounts: Record<string, PublicKey | undefined> = {
     admin: user,
+    payer,
     maker: user,
     taker: user,
     user,
@@ -554,7 +568,7 @@ export async function prepareMatching(
     }),
   );
   const lifetime = await connection.getLatestBlockhash("confirmed");
-  tx.feePayer = user;
+  tx.feePayer = payer;
   tx.recentBlockhash = lifetime.blockhash;
   const simulation = await connection.simulateTransaction(
     new VersionedTransaction(tx.compileMessage()),
@@ -575,6 +589,8 @@ export async function prepareMatching(
   ).reduce((a, b) => a + b, 0);
   return {
     transaction: tx,
+    user: userAddress,
+    sponsored: !payer.equals(user),
     lifetime,
     feeLamports: fee,
     rentLamports: rent,
