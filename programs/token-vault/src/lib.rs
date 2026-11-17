@@ -10,6 +10,9 @@ pub use matching::*;
 
 pub const DECIMALS: u8 = 6;
 pub const METADATA_AUTHORITY: Pubkey = pubkey!("GbDLTR4JK4EdZAtjXqAVDx3vWg2BwwEiESxsLqhDNEiG");
+// Purchase premiums go only to this wallet's USDC associated token account.
+pub const TREASURY_AUTHORITY: Pubkey = pubkey!("ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8");
+pub const PREMIUM_DIVISOR: u64 = 10;
 pub const TOKEN_NAME: &str = "BROBETS";
 pub const TOKEN_SYMBOL: &str = "BB";
 pub const TOKEN_URI: &str = "https://alexnham.github.io/storage/brobets.json";
@@ -143,31 +146,38 @@ pub mod token_vault {
         matching::expire(ctx)
     }
 
-    /// Amount is in millionths: 1_000_000 buys one token for one USDC.
-    pub fn buy(ctx: Context<Trade>, amount: u64) -> Result<()> {
+    /// Amount is BB in millionths. Each BB costs 1.10 USDC: 1.00 to the reserve, 0.10 to the treasury.
+    pub fn buy(ctx: Context<Buy>, amount: u64) -> Result<()> {
         validate_amount(amount)?;
-        token::transfer_checked(
-            CpiContext::new(
-                ctx.accounts.token_program.key(),
-                TransferChecked {
-                    from: ctx.accounts.user_usdc.to_account_info(),
-                    mint: ctx.accounts.usdc_mint.to_account_info(),
-                    to: ctx.accounts.reserve.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            amount,
-            DECIMALS,
-        )?;
-        let mint = ctx.accounts.usdc_mint.key();
-        let seeds: &[&[u8]] = &[b"vault", mint.as_ref(), &[ctx.accounts.vault.bump]];
+        let premium = premium(amount)?;
+        let trade = &ctx.accounts.trade;
+        for (to, units) in [
+            (trade.reserve.to_account_info(), amount),
+            (ctx.accounts.treasury.to_account_info(), premium),
+        ] {
+            token::transfer_checked(
+                CpiContext::new(
+                    trade.token_program.key(),
+                    TransferChecked {
+                        from: trade.user_usdc.to_account_info(),
+                        mint: trade.usdc_mint.to_account_info(),
+                        to,
+                        authority: trade.user.to_account_info(),
+                    },
+                ),
+                units,
+                DECIMALS,
+            )?;
+        }
+        let mint = trade.usdc_mint.key();
+        let seeds: &[&[u8]] = &[b"vault", mint.as_ref(), &[trade.vault.bump]];
         token::mint_to(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.key(),
+                trade.token_program.key(),
                 MintTo {
-                    mint: ctx.accounts.token_mint.to_account_info(),
-                    to: ctx.accounts.user_token.to_account_info(),
-                    authority: ctx.accounts.vault.to_account_info(),
+                    mint: trade.token_mint.to_account_info(),
+                    to: trade.user_token.to_account_info(),
+                    authority: trade.vault.to_account_info(),
                 },
                 &[seeds],
             ),
@@ -214,6 +224,13 @@ pub mod token_vault {
 fn validate_amount(amount: u64) -> Result<()> {
     require!(amount > 0, VaultError::ZeroAmount);
     Ok(())
+}
+
+/// 10% of `amount`, rounded up to the next USDC base unit; rejects totals that exceed u64.
+pub fn premium(amount: u64) -> Result<u64> {
+    let premium = amount.div_ceil(PREMIUM_DIVISOR);
+    amount.checked_add(premium).ok_or(VaultError::Overflow)?;
+    Ok(premium)
 }
 
 #[derive(Accounts)]
@@ -275,6 +292,14 @@ pub struct Trade<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct Buy<'info> {
+    pub trade: Trade<'info>,
+    #[account(mut, associated_token::mint = trade.usdc_mint,
+        associated_token::authority = TREASURY_AUTHORITY)]
+    pub treasury: Account<'info, TokenAccount>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Vault {
@@ -323,5 +348,21 @@ mod tests {
         assert!(validate_amount(1).is_ok());
         assert!(validate_amount(1_000_000).is_ok());
         assert!(validate_amount(u64::MAX).is_ok());
+    }
+
+    #[test]
+    fn premium_rounds_up_and_rejects_overflow() {
+        for (amount, expected) in [
+            (1, 1),
+            (9, 1),
+            (10, 1),
+            (11, 2),
+            (2_500_001, 250_001),
+            (10_000_000, 1_000_000),
+        ] {
+            assert_eq!(premium(amount).unwrap(), expected);
+        }
+        assert!(premium(u64::MAX).is_err());
+        assert!(premium(u64::MAX / 11 * 10).is_ok());
     }
 }

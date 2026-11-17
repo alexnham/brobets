@@ -3,7 +3,7 @@
 Public account addresses and authority assignments: [ADDRESSES.md](ADDRESSES.md).
 
 
-An Anchor 1.1.2 program that creates a new SPL token redeemable at **1 token = 1 USDC**. Both mints have six decimals. A purchase of `1_000_000` base units deposits one USDC and mints one token; a sale burns one token and releases one USDC. Fractional trades work down to `0.000001` token. The two operations in each instruction succeed or revert together.
+An Anchor 1.1.2 program that creates a new SPL token redeemable at **1 token = 1 USDC**. Both mints have six decimals. A purchase of `1_000_000` base units costs 1.10 USDC: one USDC goes to the redemption reserve, a 10% premium (rounded up to the next base unit) goes to the treasury wallet's associated USDC account (`TREASURY_AUTHORITY`), and one token is minted; a sale burns one token and releases one USDC from the reserve. Fractional trades work down to `0.000001` token. The operations in each instruction succeed or revert together.
 
 ## Instructions
 
