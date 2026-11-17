@@ -8,7 +8,7 @@ Measured November 17, 2026; partial evidence for [issue #9](https://github.com/a
 account-creation transaction for an existing destination models an exit cost
 of **0.00003500 SOL**; the existing-account variant was not separately run.
 
-The known fresh-user funding floor for the full tested journey is
+The known fresh-user sponsor-funded floor for the full tested journey is
 **0.00822712 SOL**, including four token accounts and the measured
 payer debits. This excludes private registration/enrollment, initial token
 account creation transaction fees, hosted proving/relay, embedded signatures,
@@ -19,7 +19,9 @@ lower bound, not a sufficient production exit reserve or minimum-purchase policy
 
 The real-proof local test passed in 47.03 seconds. [results.json](results.json)
 records hashes and local signatures; [cost-results.json](cost-results.json)
-records the same run's measurements. Priority fee requested: zero.
+records the same run's measurements. Priority fee requested: zero. All funding floors and scenario columns below
+cover sponsor funding only; the external sender's measured 5,000-lamport fee
+is excluded from those totals.
 
 | Action | Fee payer | Network fee (lamports) | Payer net debit (lamports) | Compute units |
 |---|---|---:|---:|---:|
@@ -89,7 +91,7 @@ and withdraws. The 10 USDC reserve is an obligation, not income. These are
 illustrative **USDC per SOL** assumptions, not market quotes. Formula:
 `known SOL funding × assumed USDC/SOL`; rent counts as required SOL funding.
 
-| Assumed USDC/SOL | New-user funding floor (USDC) | Exit, new destination | Round-trip floor | 1 USDC premium minus round-trip floor |
+| Assumed USDC/SOL | Sponsor new-user funding floor (USDC) | Sponsor exit, new destination | Sponsor round-trip floor | 1 USDC premium minus sponsor round-trip floor |
 |---|---:|---:|---:|---:|
 | 100 | 0.614784 | 0.207928 | 0.822712 | 0.177288 |
 | 250 | 1.536960 | 0.519820 | 2.056780 | -1.056780 |
