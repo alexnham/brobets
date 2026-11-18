@@ -93,6 +93,7 @@ pub fn propose(ctx: Context<ProposeWager>, proposal_id: u64, side: u8, amount: u
         maker_claimed: false,
         taker_claimed: false,
         bump: ctx.bumps.wager,
+        rent_payer: ctx.accounts.payer.key(),
     });
     token::transfer_checked(
         CpiContext::new(
@@ -208,12 +209,15 @@ pub fn withdraw(ctx: Context<WithdrawWager>, cancel: bool) -> Result<()> {
         }
         w.state = 3;
     }
+    // Cancelled or fully paid out: nothing is owed, so the rent goes back to its payer.
+    let settled = w.state >= 2;
+    let (question, wager_maker) = (w.question, w.maker);
     let id = w.proposal_id.to_le_bytes();
     let bump = [w.bump];
     let seeds: &[&[u8]] = &[
         b"wager_v1",
-        w.question.as_ref(),
-        w.maker.as_ref(),
+        question.as_ref(),
+        wager_maker.as_ref(),
         &id,
         &bump,
     ];
@@ -224,13 +228,30 @@ pub fn withdraw(ctx: Context<WithdrawWager>, cancel: bool) -> Result<()> {
                 from: ctx.accounts.escrow.to_account_info(),
                 mint: ctx.accounts.token_mint.to_account_info(),
                 to: ctx.accounts.user_token.to_account_info(),
-                authority: w.to_account_info(),
+                authority: ctx.accounts.wager.to_account_info(),
             },
             &[seeds],
         ),
         amount,
         DECIMALS,
-    )
+    )?;
+    ctx.accounts.escrow.reload()?;
+    // Tokens sent to the escrow from outside block its close; both accounts are then left in place rather than failing the payout.
+    if settled && ctx.accounts.escrow.amount == 0 {
+        token::close_account(CpiContext::new_with_signer(
+            ctx.accounts.token_program.key(),
+            CloseAccount {
+                account: ctx.accounts.escrow.to_account_info(),
+                destination: ctx.accounts.rent_payer.to_account_info(),
+                authority: ctx.accounts.wager.to_account_info(),
+            },
+            &[seeds],
+        ))?;
+        ctx.accounts
+            .wager
+            .close(ctx.accounts.rent_payer.to_account_info())?;
+    }
+    Ok(())
 }
 
 #[derive(Accounts)]
@@ -309,6 +330,9 @@ pub struct WithdrawWager<'info> {
     pub wager: Account<'info, MatchedWager>,
     #[account(mut, seeds = [b"wager_escrow_v1", wager.key().as_ref()], bump, token::mint = token_mint, token::authority = wager)]
     pub escrow: Account<'info, TokenAccount>,
+    /// CHECK: only receives lamports, and must be the payer recorded on the wager.
+    #[account(mut, address = wager.rent_payer)]
+    pub rent_payer: UncheckedAccount<'info>,
     #[account(mut, token::mint = token_mint, token::authority = user)]
     pub user_token: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
@@ -354,4 +378,6 @@ pub struct MatchedWager {
     pub maker_claimed: bool,
     pub taker_claimed: bool,
     pub bump: u8,
+    /// Gets the wager and escrow rent back when the wager is closed.
+    pub rent_payer: Pubkey,
 }

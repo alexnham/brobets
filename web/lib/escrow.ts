@@ -9,6 +9,7 @@ export type Wager = {
   units: string;
   state: "open" | "matched" | "cancelled" | "claimed";
   claimedBy?: string[];
+  rentPayer?: string;
 };
 export type Question = {
   chainId?: string;

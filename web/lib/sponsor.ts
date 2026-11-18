@@ -137,8 +137,13 @@ function checkWager(
   abi.accounts.forEach((a, i) => {
     const k = main.keys[i],
       want = fixed[a.name];
-    // The sponsor may appear only as the rent payer, never in any other slot.
-    if (want ? !k.pubkey.equals(want) : k.pubkey.equals(payer))
+    // The sponsor may appear only as the payer of rent, or as the account that gets it
+    // back (the program pins rent_payer to the payer recorded on the wager).
+    if (
+      want
+        ? !k.pubkey.equals(want)
+        : k.pubkey.equals(payer) && a.name !== "rent_payer"
+    )
       fail(`account ${a.name}`);
   });
 }
