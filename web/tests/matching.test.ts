@@ -73,6 +73,7 @@ function fixture() {
     u64(pid),
     u64(5123456n),
     Buffer.from([1, 0, 0, 0, 255]),
+    maker.toBuffer(), // rent payer
   ]);
   const market = Buffer.concat([
     disc("MatchMarket"),
@@ -191,7 +192,7 @@ test("preparation encodes exact stakes, validates full matching and rejects self
   );
   assert.equal(p.stake, "5123456");
   assert.equal(p.payout, "10246912");
-  assert.equal(p.rentLamports, 2900);
+  assert.equal(p.rentLamports, 3220);
   await assert.rejects(
     prepareMatching(f.connection, f.maker.toBase58(), "match", {
       question: q,
@@ -315,6 +316,8 @@ test("sponsor pays fee and rent only for the session player's exact wager action
     w = decodeWager(f.wkey, f.account(f.wdata)),
     sponsor = Keypair.generate(),
     address = sponsor.publicKey.toBase58();
+  // The sponsor paid this wager's rent, so it is also the account that gets it back.
+  sponsor.publicKey.toBuffer().copy(f.wdata, 125);
   const sign = (tx: Transaction, user = f.maker, signer = f.makerKey) => {
     tx.partialSign(signer);
     return sponsorSign(
@@ -348,6 +351,10 @@ test("sponsor pays fee and rent only for the session player's exact wager action
     address,
   );
   assert.equal(c.transaction.instructions.length, 2);
+  const rentPayer = idl.instructions
+    .find((i) => i.name === "cancel_wager")!
+    .accounts.findIndex((a) => a.name === "rent_payer");
+  assert.equal(c.transaction.instructions[1].keys[rentPayer].pubkey.toBase58(), address);
   assert.ok(Transaction.from(sign(c.transaction)).verifySignatures());
   // Without a sponsor, and for admin actions, the user stays the payer.
   const own = await prepareMatching(f.connection, f.maker.toBase58(), "propose", {

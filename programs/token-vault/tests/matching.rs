@@ -271,6 +271,7 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             token_mint: mint,
             wager: w,
             escrow: e,
+            rent_payer: pubkey(sponsor()),
             user_token: pubkey(token),
             token_program: anchor_spl::token::ID,
         };
@@ -284,12 +285,18 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             rival,
             ix(withdraw(rival, ra), instruction::CancelWager {})
         ));
+        let lamports = |svm: &LiteSVM, key| svm.get_account(&key).map_or(0, |a| a.lamports);
         if case == 1 {
+            // Cancelling closes the wager and escrow and returns both rents to the sponsor.
+            let rent = lamports(&svm, address(w)) + lamports(&svm, address(e));
+            let paid = lamports(&svm, sponsor());
             assert!(act(
                 &mut svm,
                 maker,
                 ix(withdraw(maker, ma), instruction::CancelWager {})
             ));
+            assert_eq!(lamports(&svm, sponsor()), paid + rent - 10_000);
+            assert_eq!(lamports(&svm, address(w)) + lamports(&svm, address(e)), 0);
             assert!(!act(
                 &mut svm,
                 taker,
@@ -312,12 +319,15 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
                 taker,
                 ix(take(taker, ta), instruction::MatchWager {})
             ));
+            // Tokens donated to the escrow block its close but never the refund itself.
+            token_account(&mut svm, address(e), address(mint), address(w), 5_123_457);
             assert!(act(
                 &mut svm,
                 maker,
                 ix(withdraw(maker, ma), instruction::ClaimWager {})
             ));
             assert_eq!(balance(&svm, ma), before);
+            assert_eq!(balance(&svm, address(e)), 1);
             continue;
         }
         let empty = Address::new_unique();
@@ -481,6 +491,15 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             maker,
             ix(substituted, instruction::ClaimWager {})
         ));
+        let mut redirected = withdraw(maker, ma);
+        redirected.rent_payer = pubkey(rival);
+        assert!(!act(
+            &mut svm,
+            maker,
+            ix(redirected, instruction::ClaimWager {})
+        ));
+        let rent = lamports(&svm, address(w)) + lamports(&svm, address(e));
+        let paid = lamports(&svm, sponsor());
         if case == 4 {
             assert!(!act(
                 &mut svm,
@@ -529,7 +548,10 @@ fn matched_wagers_enforce_authority_atomic_matching_and_exact_payouts() {
             maker,
             ix(withdraw(maker, ma), instruction::ClaimWager {})
         ));
-        assert_eq!(balance(&svm, address(e)), 0);
+        // Fully paid out: both accounts are closed and their rent is back with the sponsor.
+        // Rejected attempts above also cost a fee each, so allow up to five fees.
+        assert_eq!(lamports(&svm, address(w)) + lamports(&svm, address(e)), 0);
+        assert!(lamports(&svm, sponsor()) >= paid + rent - 50_000);
     }
     // Propose, match, cancel, claim and refund all ran without any player ever holding SOL.
     for player in [maker, taker, rival] {

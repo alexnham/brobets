@@ -184,9 +184,11 @@ export function decodeQuestion(
             : undefined,
   };
 }
+// Wagers made before rent refunds were 125 bytes; they are settled and no longer listed.
+const WAGER_SIZE = 157;
 export function decodeWager(key: PublicKey, info: AccountInfo<Buffer>): Wager {
   const d = deployment(),
-    r = checked(info, "MatchedWager", 125);
+    r = checked(info, "MatchedWager", WAGER_SIZE);
   const questionId = r.key(),
     maker = r.key(),
     taker = r.key(),
@@ -197,6 +199,7 @@ export function decodeWager(key: PublicKey, info: AccountInfo<Buffer>): Wager {
     mc = r.byte(),
     tc = r.byte();
   r.byte();
+  const rentPayer = r.key();
   if (
     !d
       .derive(
@@ -226,6 +229,7 @@ export function decodeWager(key: PublicKey, info: AccountInfo<Buffer>): Wager {
     side: side === 1 ? "a" : "b",
     state: (["open", "matched", "cancelled", "claimed"] as const)[state],
     claimedBy: [...(mc ? [maker] : []), ...(tc ? [taker] : [])],
+    rentPayer,
   };
 }
 export async function readMatching(
@@ -243,18 +247,19 @@ export async function readMatching(
     r.byte() !== 1
   )
     throw Error("Matching market configuration mismatch");
-  const get = (name: string) =>
+  const get = (name: string, size?: number) =>
     connection.getProgramAccounts(d.program, {
       commitment: "confirmed",
       filters: [
         {
           memcmp: { offset: 0, bytes: bs58.encode(discriminator(name, true)) },
         },
+        ...(size ? [{ dataSize: size }] : []),
       ],
     });
   const [qs, ws] = await Promise.all([
     get("MatchQuestion"),
-    get("MatchedWager"),
+    get("MatchedWager", WAGER_SIZE),
   ]);
   const questions = qs
     .map((a) => decodeQuestion(a.pubkey, a.account))
@@ -281,7 +286,9 @@ export async function readMatching(
       "confirmed",
     );
     chunk.forEach((initial, index) => {
-      const w = decodeWager(new PublicKey(initial.id), accounts[index]!);
+      // Settled wagers are closed; one may close between the listing and this read.
+      if (!accounts[index]) return;
+      const w = decodeWager(new PublicKey(initial.id), accounts[index]);
       const info = accounts[chunk.length + index];
       wagers.push(w);
       if (
@@ -471,7 +478,7 @@ export async function prepareMatching(
       Buffer.from([input.side === "a" ? 1 : 2]),
       u64(stake),
     ]);
-    rentBytes = [125, 165];
+    rentBytes = [WAGER_SIZE, 165];
   }
   if (action === "match") {
     if (
@@ -542,6 +549,7 @@ export async function prepareMatching(
     question: questionKey,
     wager: wagerKey,
     escrow,
+    rent_payer: w?.rentPayer ? new PublicKey(w.rentPayer) : undefined,
     token_mint: d.mint,
     maker_token: tokenAccount,
     taker_token: tokenAccount,

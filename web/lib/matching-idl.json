@@ -128,6 +128,10 @@
           }
         },
         {
+          "name": "rent_payer",
+          "writable": true
+        },
+        {
           "name": "user_token",
           "writable": true
         },
@@ -258,6 +262,10 @@
               }
             ]
           }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
         },
         {
           "name": "user_token",
@@ -1134,6 +1142,13 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Gets the wager and escrow rent back when the wager is closed."
+            ],
+            "type": "pubkey"
           }
         ]
       }
