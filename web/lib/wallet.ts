@@ -43,7 +43,7 @@ import {
   getMint,
   getAccount,
 } from "@solana/spl-token";
-import { parseAmount } from "./money";
+import { parseAmount, quoteBuy } from "./money";
 // Must match TREASURY_AUTHORITY in programs/token-vault/src/lib.rs.
 export const TREASURY_AUTHORITY = new PublicKey(
   "ERsc4ugZCfht4joqXWgVqtb222KUorwTuoD4Nc17wsB8",
@@ -53,11 +53,7 @@ export const TRADE_DISCRIMINATORS = {
   buy: [102, 6, 61, 18, 1, 218, 235, 234],
   sell: [51, 230, 133, 164, 1, 127, 131, 173],
 };
-/** Buying costs 1.10 USDC per BB; the 10% premium rounds up to the next base unit. */
-export function quoteBuy(quantity: bigint) {
-  const premium = (quantity + 9n) / 10n;
-  return { quantity, backing: quantity, premium, total: quantity + premium };
-}
+export { quoteBuy } from "./money";
 export async function prepareVaultTrade(
   connection: Connection,
   address: string,

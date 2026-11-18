@@ -37,3 +37,20 @@ model TransactionReference {
   createdAt DateTime @default(now())
   // A reference is not proof of escrow funding. Read confirmed chain accounts.
 }
+
+model PurchaseDraft {
+  id String @id @default(cuid())
+  wallet String
+  requestId String
+  status String @default("DRAFT")
+  cluster String @default("devnet")
+  mint String
+  quantity Decimal @db.Decimal(20, 0)
+  backing Decimal @db.Decimal(20, 0)
+  premium Decimal @db.Decimal(20, 0)
+  total Decimal @db.Decimal(20, 0)
+  createdAt DateTime @default(now())
+
+  @@unique([wallet, requestId])
+  @@index([wallet, createdAt, id])
+}
