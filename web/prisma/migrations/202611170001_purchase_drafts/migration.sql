@@ -1,7 +1,7 @@
 CREATE TABLE "PurchaseDraft" (
     "id" TEXT NOT NULL,
     "wallet" TEXT NOT NULL,
-    "requestId" TEXT NOT NULL,
+    "requestId" UUID NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "cluster" TEXT NOT NULL DEFAULT 'devnet',
     "mint" TEXT NOT NULL,

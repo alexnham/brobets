@@ -30,8 +30,8 @@ test("durable, exact, wallet-private purchase drafts with concurrent retry prote
     expect((await request.post("/api/purchases", { headers: { Origin: "https://evil.example" }, data: {} })).status()).toBe(403);
     await signIn(request, owner);
     const requestId = randomUUID();
-    const responses = await Promise.all(Array.from({ length: 8 }, () => request.post("/api/purchases", {
-      headers: origin, data: { quantity: "10", requestId },
+    const responses = await Promise.all(Array.from({ length: 8 }, (_, index) => request.post("/api/purchases", {
+      headers: origin, data: { quantity: "10", requestId: index % 2 ? requestId.toUpperCase() : requestId },
     })));
     expect(responses.filter((r) => r.status() === 201)).toHaveLength(1);
     expect(responses.filter((r) => r.status() === 200)).toHaveLength(7);

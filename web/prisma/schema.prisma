@@ -41,7 +41,7 @@ model TransactionReference {
 model PurchaseDraft {
   id String @id @default(cuid())
   wallet String
-  requestId String
+  requestId String @db.Uuid
   status String @default("DRAFT")
   cluster String @default("devnet")
   mint String
