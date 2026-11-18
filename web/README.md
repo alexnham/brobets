@@ -74,6 +74,34 @@ The deterministic test wallet is public test data, not a funded wallet. These te
 
 Live Helius email delivery, funded devnet vault trades, and a full two-wallet devnet escrow run require the upgraded deployment and user wallet signatures. Local LiteSVM tests cover matching conflicts, both winning sides, cancellation, refunds, and invalid accounts. Automated accessibility checks supplement manual screen-reader and real-device review.
 
+## Purchase draft backend
+
+Purchase drafts are stored in PostgreSQL and bound to the authenticated wallet,
+independently of the browser's pending-transaction storage. Apply the additive
+migration with `npm run db:migrate` before using the new endpoints.
+
+- `POST /api/purchases`: same-origin authenticated JSON
+  `{ "quantity": "10", "requestId": "<UUID>" }`. Quantity has at most six decimals.
+  Returns 201 for a new draft or 200 for an exact retry. Reusing a request ID
+  with another quantity returns 409; request IDs are scoped to each wallet.
+- `GET /api/purchases`: authenticated history, 50 drafts per page, with
+  `nextCursor`; pass it as `?cursor=...` for the next page.
+- `GET /api/purchases/<id>`: authenticated owner-only lookup. Other wallets
+  receive the same 404 as a missing draft. Responses are private and not cached.
+
+Quotes snapshot the configured mint and devnet cluster. Six-decimal base-unit
+amounts are returned as strings in `quote.bbUnits`, `backingUnits`, `premiumUnits`
+and `totalUnits`; the premium rounds upward to the next USDC base unit. Drafts
+remain `DRAFT` with `paymentEnabled: false`. They do not reserve a price, supply
+payment instructions, accept money, mint BB, or attest that the configured mint
+has been verified on-chain. Payment activation requires a fresh validated quote
+and the real private funding integration. Existing direct vault trades do not
+automatically create these records. No draft-update or settlement API is exposed.
+
+`tests/browser/purchases.spec.ts` exercises this against a disposable PostgreSQL
+database, including concurrent retries, exact fractional/large amounts, history
+pagination, authentication, cross-wallet denial and restoration after sign-in.
+
 ## Dependency notes
 
 Helius wallet-kit currently requires Solana web3.js 1.x. Its dependency graph and the SPL-token/Prisma tooling graph contain upstream npm advisories (including high-severity `bigint-buffer` and `deepmerge-ts` entries at implementation time). Do not blindly apply `npm audit fix --force`, which proposes incompatible package downgrades. Recheck `npm audit` and upgrade compatible upstream releases before production use. The app has not received an independent security audit.

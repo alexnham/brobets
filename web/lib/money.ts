@@ -15,3 +15,9 @@ export function formatAmount(units: bigint): string {
     .replace(/0+$/, "");
   return `${units / 1_000_000n}${tail ? "." + tail : ""}`;
 }
+
+/** Buying costs 1.10 USDC per BB; the 10% premium rounds up to the next base unit. */
+export function quoteBuy(quantity: bigint) {
+  const premium = (quantity + 9n) / 10n;
+  return { quantity, backing: quantity, premium, total: quantity + premium };
+}
